@@ -1,0 +1,253 @@
+package numerics.functionals
+
+import kotlin.math.abs
+
+import numerics.*
+
+// ============================================================================
+// 6. ЧЕТЫРЕ СЕМЕЙСТВА (КВАЗИ)ПРОЕКЦИОННЫХ ФУНКЦИОНАЛОВ
+// theta (prfunc), xi (де Бура--Фикса, значение+производная), mu (усредняющие),
+// lambda (трёхточечные). См. шапку файла об источниках формул.
+// ============================================================================
+
+/**
+ * Общий интерфейс аппроксимационного функционала chi_j. Для theta,mu,lambda нужны
+ * только значения f; для xi нужна и производная f'. Поэтому интерфейс принимает
+ * функцию и её производную; семейства без производных её просто игнорируют.
+ */
+interface ApproxFunctional {
+    /** chi_j(f) по функции f и её производной fD. */
+    fun apply(f: (Double) -> Double, fD: (Double) -> Double): Double
+
+    /** Сумма |коэффициентов| — для оценки нормы C_chi. */
+    fun absSum(): Double
+}
+
+/** Удобная обёртка: chi_j(f) без явной производной (производная = 0). */
+fun ApproxFunctional.apply(f: (Double) -> Double): Double = apply(f) { 0.0 }
+
+/**
+ * Семейство (квази)проекционных функционалов {chi_j}_{j=-2}^{n-1} и (квази)проектор
+ * P_chi g = sum_j chi_j(g) omega_j. Общий интерфейс для theta/xi/mu/lambda.
+ *
+ * @property isProjector true для проекторов (theta, xi): P^2=P, биортогональность,
+ *           редукция Кулкарни (L7) применима. false для квазиинтерполянтов (mu, lambda).
+ * @property usesDerivative true для xi (работа в C^1).
+ */
+abstract class FunctionalFamily(val basis: MinimalSplineBasis, val name: String) {
+    val grid = basis.grid
+    val n = grid.n
+    abstract val isProjector: Boolean
+    abstract val usesDerivative: Boolean
+
+    /** Функционал chi_j, j = -2..n-1. */
+    abstract fun chi(j: Int): ApproxFunctional
+
+    /** Коэффициенты проекции P_chi g = sum chi_j(g) omega_j: вектор (chi_j(g)) размера n+2. */
+    fun projectorCoeffs(g: (Double) -> Double, gD: (Double) -> Double = { 0.0 }): DoubleArray =
+        DoubleArray(n + 2) { chi(it - 2).apply(g, gD) }
+
+    /** Максимум sum_k |коэффициенты| по всем j — константа C_chi. */
+    fun cChi(): Double = (-2..n - 1).maxOf { chi(it).absSum() }
+}
+
+// ----------------------------------------------------------------------------
+// 6.1 theta — ПРОЕКЦИОННЫЕ ФУНКЦИОНАЛЫ (prfunc-formulas.md)
+// ----------------------------------------------------------------------------
+
+/** Линейная комбинация значений f в точках nodes с коэффициентами coeffs (только значения). */
+class ValueFunctional(val nodes: DoubleArray, val coeffs: DoubleArray) : ApproxFunctional {
+    init { require(nodes.size == coeffs.size) }
+    override fun apply(f: (Double) -> Double, fD: (Double) -> Double): Double {
+        var s = 0.0
+        for (k in nodes.indices) s += coeffs[k] * f(nodes[k])
+        return s
+    }
+    override fun absSum(): Double = coeffs.fold(0.0) { acc, v -> acc + abs(v) }
+}
+
+/**
+ * Семейство проекционных theta_j (prfunc). Внутренние/краевые строятся локальной
+ * биортогонализацией (решение theta_j(omega_i)=delta_ij по узлам и серединам) —
+ * устойчивое эквивалентное представление, сверяемое с (pr_func_b) в health-check.
+ */
+class ProjFunctionals(basis: MinimalSplineBasis) : FunctionalFamily(basis, "theta") {
+    override val isProjector = true
+    override val usesDerivative = false
+    private val funcs: Array<ApproxFunctional> = Array(n + 2) { buildTheta(it - 2) }
+    override fun chi(j: Int): ApproxFunctional = funcs[j + 2]
+
+    private fun mid(p: Double, q: Double) = 0.5 * (p + q)
+
+    private fun buildTheta(j: Int): ApproxFunctional {
+        val x0 = grid.x(0); val x1 = grid.x(1)
+        val xnm1 = grid.x(n - 1); val xn = grid.x(n)
+        return when (j) {
+            -2 -> ValueFunctional(doubleArrayOf(x0), doubleArrayOf(1.0))
+            -1 -> localFunctional(j = -1, points = doubleArrayOf(x0, mid(x0, x1), x1), indices = intArrayOf(-2, -1, 0))
+            n - 1 -> ValueFunctional(doubleArrayOf(xn), doubleArrayOf(1.0))
+            n - 2 -> localFunctional(j = n - 2, points = doubleArrayOf(xnm1, mid(xnm1, xn), xn), indices = intArrayOf(n - 3, n - 2, n - 1))
+            else -> {
+                val xj = grid.x(j); val xj1 = grid.x(j + 1); val xj2 = grid.x(j + 2); val xj3 = grid.x(j + 3)
+                localFunctional(
+                    j = j,
+                    points = doubleArrayOf(xj, mid(xj, xj1), mid(xj1, xj2), mid(xj2, xj3), xj3),
+                    indices = intArrayOf(j - 2, j - 1, j, j + 1, j + 2),
+                )
+            }
+        }
+    }
+
+    /** Локальная биортогонализация: coeff так, что sum_p coeff_p omega_i(points_p)=delta_ij. */
+    private fun localFunctional(j: Int, points: DoubleArray, indices: IntArray): ValueFunctional {
+        val m = points.size
+        val matrix = Array(m) { r -> DoubleArray(m) { c -> basis.omega(indices[r], points[c]) } }
+        val rhs = DoubleArray(m) { if (indices[it] == j) 1.0 else 0.0 }
+        val coeff = LinearAlgebra.solve(matrix, rhs)
+        return ValueFunctional(points, coeff)
+    }
+
+    /** Закрытая формула (pr_func) для внутреннего j (только для health-check). */
+    fun closedFormInternal(j: Int): ValueFunctional {
+        val xj = grid.x(j); val xj1 = grid.x(j + 1); val xj2 = grid.x(j + 2); val xj3 = grid.x(j + 3)
+        val a = basis.omega(j, mid(xj, xj1))
+        val c = basis.omega(j, mid(xj1, xj2))
+        val e = basis.omega(j, mid(xj2, xj3))
+        val b = basis.omega(j, xj1)
+        val d = basis.omega(j, xj2)
+        val k1 = c * c * d - b * c * e - a * d * e - d * e * e
+        return ValueFunctional(
+            doubleArrayOf(xj, mid(xj, xj1), mid(xj1, xj2), mid(xj2, xj3), xj3),
+            doubleArrayOf(e * e / k1, -d * e / k1, (c * d - b * e) / k1, -d * e / k1, e * e / k1),
+        )
+    }
+}
+// ----------------------------------------------------------------------------
+// 6.2 xi — ФУНКЦИОНАЛЫ ДЕ БУРА--ФИКСА (monograph, значение + производная, C^1)
+// ----------------------------------------------------------------------------
+
+/**
+ * Функционал вида xi(u) = u(node) + cD * u'(node) (де Бура--Фикса r=1).
+ * При cD=0 и chаистом значении — краевой u(x_0)/u(x_n).
+ */
+class DerivFunctional(val node: Double, val cD: Double) : ApproxFunctional {
+    override fun apply(f: (Double) -> Double, fD: (Double) -> Double): Double = f(node) + cD * fD(node)
+    override fun absSum(): Double = 1.0 + abs(cD)
+}
+
+/**
+ * Семейство xi_j^{<1>}(u) = u(x_{j+1}) + C_j u'(x_{j+1}) (monograph, формула xi^{<1>}):
+ * C_j = ((sigma_{j+2}-sigma_{j+1})rho'_{j+2} - (rho_{j+2}-rho_{j+1})sigma'_{j+2})
+ *       / (rho'_{j+2}sigma'_{j+1} - rho'_{j+1}sigma'_{j+2}).
+ * ПРОЕКТОР (биортогональность (bior_m=2)); работает в C^1.
+ * Краевые j=-2,n-1: чистые значения u(x_0), u(x_n).
+ */
+class DeBoorFixFunctionals(basis: MinimalSplineBasis) : FunctionalFamily(basis, "xi") {
+    override val isProjector = true
+    override val usesDerivative = true
+    private val sys = basis.sys
+    private val funcs: Array<ApproxFunctional> = Array(n + 2) { buildXi(it - 2) }
+    override fun chi(j: Int): ApproxFunctional = funcs[j + 2]
+
+    private fun buildXi(j: Int): ApproxFunctional {
+        if (j == -2) return DerivFunctional(grid.x(0), 0.0)
+        if (j == n - 1) return DerivFunctional(grid.x(n), 0.0)
+        val x1 = grid.x(j + 1); val x2 = grid.x(j + 2)
+        val rho1 = sys.rho(x1); val rho2 = sys.rho(x2)
+        val sig1 = sys.sigma(x1); val sig2 = sys.sigma(x2)
+        val rhoD1 = sys.rhoD(x1); val rhoD2 = sys.rhoD(x2)
+        val sigD1 = sys.sigmaD(x1); val sigD2 = sys.sigmaD(x2)
+        val denom = rhoD2 * sigD1 - rhoD1 * sigD2
+        val cD = ((sig2 - sig1) * rhoD2 - (rho2 - rho1) * sigD2) / denom
+        return DerivFunctional(x1, cD)
+    }
+}
+
+// ----------------------------------------------------------------------------
+// 6.3 mu — УСРЕДНЯЮЩИЕ ФУНКЦИОНАЛЫ (monograph, (mu_j(f)), сетка Y, theta=1/2)
+// ----------------------------------------------------------------------------
+
+/**
+ * Усредняющие mu_j(f) = a_j f(y_{j-1}) + b_j f(y_j) + c_j f(y_{j+1}),
+ * y_j = x_{j+1} + theta(x_{j+2}-x_{j+1}), theta=1/2 (monograph (net_Y)). Коэффициенты
+ * из условия точности на span{1,rho,sigma}: система
+ *   [1,1,1; rho(y_{j-1}),rho(y_j),rho(y_{j+1}); sigma(...)] (a,b,c)^T = a^N_j,
+ * где a^N_j = (1, S_{j+1}(rho,sigma,rho'), S_{j+1}(rho,sigma,sigma')) — вектор
+ * аппроксимационного соотношения (тот же, что строит базис). КВАЗИИНТЕРПОЛЯНТ.
+ * Для B при theta=1/2 на равномерной сетке: -1/8(f(y_{j-1})-10 f(y_j)+f(y_{j+1})).
+ */
+class AveragingFunctionals(basis: MinimalSplineBasis, val theta: Double = 0.5) :
+    FunctionalFamily(basis, "mu") {
+    override val isProjector = false
+    override val usesDerivative = false
+    private val sys = basis.sys
+    private val funcs: Array<ApproxFunctional> = Array(n + 2) { buildMu(it - 2) }
+    override fun chi(j: Int): ApproxFunctional = funcs[j + 2]
+
+    /** y_j по (net_Y): краевые y_{-2}=x_0, y_{n-1}=x_n; внутренние — x_{j+1}+theta(x_{j+2}-x_{j+1}). */
+    private fun yNode(j: Int): Double = when (j) {
+        -2 -> grid.x(0)
+        n - 1 -> grid.x(n)
+        else -> grid.x(j + 1) + theta * (grid.x(j + 2) - grid.x(j + 1))
+    }
+
+    /** Вектор a^N_j (аппроксимационного соотношения) — как в MinimalSplineBasis.computeA. */
+    private fun aN(j: Int): DoubleArray {
+        val xj1 = grid.x(j + 1); val xj2 = grid.x(j + 2)
+        val phiJ1 = sys.phi(xj1)
+        if (xj1 == xj2) return phiJ1
+        val phiDJ1 = sys.phiD(xj1)
+        val dJ2 = cross3(sys.phi(xj2), sys.phiD(xj2))
+        val coef = dot3(dJ2, phiJ1) / dot3(dJ2, phiDJ1)
+        return doubleArrayOf(phiJ1[0] - coef * phiDJ1[0], phiJ1[1] - coef * phiDJ1[1], phiJ1[2] - coef * phiDJ1[2])
+    }
+
+    private fun buildMu(j: Int): ApproxFunctional {
+        if (j == -2) return ValueFunctional(doubleArrayOf(grid.x(0)), doubleArrayOf(1.0))
+        if (j == n - 1) return ValueFunctional(doubleArrayOf(grid.x(n)), doubleArrayOf(1.0))
+        val ym = yNode(j - 1); val y0 = yNode(j); val yp = yNode(j + 1)
+        val matrix = arrayOf(
+            doubleArrayOf(1.0, 1.0, 1.0),
+            doubleArrayOf(sys.rho(ym), sys.rho(y0), sys.rho(yp)),
+            doubleArrayOf(sys.sigma(ym), sys.sigma(y0), sys.sigma(yp)),
+        )
+        val coeff = LinearAlgebra.solve(matrix, aN(j))
+        return ValueFunctional(doubleArrayOf(ym, y0, yp), coeff)
+    }
+}
+
+// ----------------------------------------------------------------------------
+// 6.4 lambda — ТРЁХТОЧЕЧНЫЕ ФУНКЦИОНАЛЫ (monograph, (lambda_j(f)), theta^=1/2)
+// ----------------------------------------------------------------------------
+
+/**
+ * Трёхточечные lambda_j(f) по точкам x_{j+1}, x_{j+3/2}=x_{j+1}+theta^(x_{j+2}-x_{j+1}),
+ * x_{j+2}; theta^=1/2 (выбор, prfunc-formulas.md / monograph (net) remark). Реализованы
+ * через локальную аппроксимацию P^I на I=[x_{j+1},x_{j+2}] (monograph remark):
+ * на (x_{j+1},x_{j+2}) активны omega_{j-1},omega_j,omega_{j+1}; решаем M c = fvals в трёх
+ * точках, lambda_j(f) = коэффициент при omega_j = (M^{-1})[1][.] · fvals. КВАЗИИНТЕРПОЛЯНТ.
+ * Для B при theta^=1/2: -1/2(f(x_{j+1})-4 f(x_{j+3/2})+f(x_{j+2})).
+ */
+class ThreePointFunctionals(basis: MinimalSplineBasis, val thetaHat: Double = 0.5) :
+    FunctionalFamily(basis, "lambda") {
+    override val isProjector = false
+    override val usesDerivative = false
+    private val funcs: Array<ApproxFunctional> = Array(n + 2) { buildLambda(it - 2) }
+    override fun chi(j: Int): ApproxFunctional = funcs[j + 2]
+
+    private fun buildLambda(j: Int): ApproxFunctional {
+        if (j == -2) return ValueFunctional(doubleArrayOf(grid.x(0)), doubleArrayOf(1.0))
+        if (j == n - 1) return ValueFunctional(doubleArrayOf(grid.x(n)), doubleArrayOf(1.0))
+        val x1 = grid.x(j + 1); val x2 = grid.x(j + 2)
+        val xMid = x1 + thetaHat * (x2 - x1)
+        val points = doubleArrayOf(x1, xMid, x2)
+        val active = intArrayOf(j - 1, j, j + 1) // активные на (x_{j+1},x_{j+2})
+        // M[p][slot] = omega_active[slot](point_p); решаем M c = fvals -> lambda_j = c[slot==j].
+        val mt = Array(3) { p -> DoubleArray(3) { s -> basis.omega(active[s], points[p]) } }
+        // coeffs_p = (M^{-1})[1][p]: решаем M^T r = e_1 (строка 1 обратной).
+        val mTrans = Array(3) { i -> DoubleArray(3) { p -> mt[p][i] } }
+        val e1 = doubleArrayOf(0.0, 1.0, 0.0)
+        val coeff = LinearAlgebra.solve(mTrans, e1)
+        return ValueFunctional(points, coeff)
+    }
+}
