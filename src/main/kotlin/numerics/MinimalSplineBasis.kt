@@ -31,7 +31,11 @@ class MinimalSplineBasis(val sys: GeneratingSystem, val grid: Grid) {
         if (xj1 == xj2) return phiJ1 // тройной узел на краю
         val phiDJ1 = sys.phiD(xj1)
         val dJ2 = cross3(sys.phi(xj2), sys.phiD(xj2))
-        val coef = dot3(dJ2, phiJ1) / dot3(dJ2, phiDJ1)
+        val denom = dot3(dJ2, phiDJ1)
+        require(kotlin.math.abs(denom) >= 1e-14) {
+            "computeA(j=$j): degenerate approximation relation, dot3(dJ2, phiDJ1)=$denom (near-zero denominator)"
+        }
+        val coef = dot3(dJ2, phiJ1) / denom
         return doubleArrayOf(
             phiJ1[0] - coef * phiDJ1[0],
             phiJ1[1] - coef * phiDJ1[1],

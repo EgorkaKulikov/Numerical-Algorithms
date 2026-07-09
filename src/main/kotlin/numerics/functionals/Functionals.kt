@@ -158,6 +158,9 @@ class DeBoorFixFunctionals(basis: MinimalSplineBasis) : FunctionalFamily(basis, 
         val rhoD1 = sys.rhoD(x1); val rhoD2 = sys.rhoD(x2)
         val sigD1 = sys.sigmaD(x1); val sigD2 = sys.sigmaD(x2)
         val denom = rhoD2 * sigD1 - rhoD1 * sigD2
+        require(kotlin.math.abs(denom) >= 1e-14) {
+            "buildXi(j=$j): degenerate Wronskian rhoD2*sigD1 - rhoD1*sigD2=$denom (near-zero denominator)"
+        }
         val cD = ((sig2 - sig1) * rhoD2 - (rho2 - rho1) * sigD2) / denom
         return DerivFunctional(x1, cD)
     }
@@ -198,7 +201,11 @@ class AveragingFunctionals(basis: MinimalSplineBasis, val theta: Double = 0.5) :
         if (xj1 == xj2) return phiJ1
         val phiDJ1 = sys.phiD(xj1)
         val dJ2 = cross3(sys.phi(xj2), sys.phiD(xj2))
-        val coef = dot3(dJ2, phiJ1) / dot3(dJ2, phiDJ1)
+        val denom = dot3(dJ2, phiDJ1)
+        require(kotlin.math.abs(denom) >= 1e-14) {
+            "aN(j=$j): degenerate approximation relation, dot3(dJ2, phiDJ1)=$denom (near-zero denominator)"
+        }
+        val coef = dot3(dJ2, phiJ1) / denom
         return doubleArrayOf(phiJ1[0] - coef * phiDJ1[0], phiJ1[1] - coef * phiDJ1[1], phiJ1[2] - coef * phiDJ1[2])
     }
 
