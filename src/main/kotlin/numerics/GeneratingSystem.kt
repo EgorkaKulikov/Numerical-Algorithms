@@ -75,6 +75,9 @@ fun det3(a: DoubleArray, b: DoubleArray, c: DoubleArray): Double = dot3(a, cross
  */
 fun invert3(c0: DoubleArray, c1: DoubleArray, c2: DoubleArray): Array<DoubleArray> {
     val det = det3(c0, c1, c2)
+    require(kotlin.math.abs(det) >= 1e-14) {
+        "invert3: matrix is singular or near-singular, det=$det"
+    }
     val r0 = cross3(c1, c2)
     val r1 = cross3(c2, c0)
     val r2 = cross3(c0, c1)

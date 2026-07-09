@@ -93,4 +93,32 @@ class MinimalSplineBasisExtraTest {
         // j=n-1: x(n-1)<x(n) истинно, но x(n)==x(n+1) -> второе сравнение ложно
         assertTrue(!nonDegenerate(grid, grid.n - 1))
     }
+
+    /**
+     * Регресс #4: бинарный поиск интервала даёт тот же результат, что наивный
+     * линейный, во ВСЕХ представительных точках (внутри интервалов, на внутренних
+     * узлах, левый/правый концы, точки чуть за границами).
+     */
+    @Test fun intervalBinarySearchMatchesLinear() {
+        val g = Grid.uniform(5)
+        val basis = MinimalSplineBasis(GeneratingSystem.B, g)
+        // Эталонный линейный поиск (совпадает с прежней реализацией intervalOf).
+        fun linear(t: Double): Int {
+            var k = 0
+            while (k < g.n - 1 && t >= g.x(k + 1)) k++
+            return k
+        }
+        val pts = mutableListOf<Double>()
+        pts.add(g.a)                     // левый конец
+        pts.add(g.b)                     // правый конец
+        pts.add(g.a - 0.1)               // чуть за левой границей
+        pts.add(g.b + 0.1)               // чуть за правой границей
+        for (i in 0..g.n) {
+            pts.add(g.x(i))              // ровно на узле (в т.ч. внутренние)
+            if (i < g.n) pts.add(0.5 * (g.x(i) + g.x(i + 1))) // середина интервала
+        }
+        for (t in pts) {
+            assertEquals(linear(t), basis.interval(t), "interval mismatch at t=$t")
+        }
+    }
 }

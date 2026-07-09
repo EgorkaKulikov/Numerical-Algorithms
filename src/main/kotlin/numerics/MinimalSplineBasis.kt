@@ -41,9 +41,18 @@ class MinimalSplineBasis(val sys: GeneratingSystem, val grid: Grid) {
 
     /** Индекс сеточного интервала k с x_k <= t < x_{k+1} (для t=b возвращает n-1). */
     private fun intervalOf(t: Double): Int {
-        var k = 0
-        while (k < n - 1 && t >= grid.x(k + 1)) k++
-        return k
+        // Бинарный поиск (breakpoints x_0..x_n возрастают): наибольший k in [0,n-1]
+        // с x_k <= t, с клампами на концах. Семантика идентична линейному поиску:
+        // t < x_1 -> 0; t >= x_{n-1} -> n-1; иначе x_lo <= t < x_{lo+1}.
+        if (t < grid.x(1)) return 0
+        if (t >= grid.x(n - 1)) return n - 1
+        var lo = 1
+        var hi = n - 1
+        while (hi - lo > 1) {
+            val mid = (lo + hi) / 2
+            if (grid.x(mid) <= t) lo = mid else hi = mid
+        }
+        return lo
     }
 
     /** Индекс сеточного интервала, содержащего t (публичный доступ). */
