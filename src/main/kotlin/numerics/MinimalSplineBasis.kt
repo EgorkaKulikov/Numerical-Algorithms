@@ -95,6 +95,21 @@ class MinimalSplineBasis(val sys: GeneratingSystem, val grid: Grid) {
         return inv[slot][0] * phiDT[0] + inv[slot][1] * phiDT[1] + inv[slot][2] * phiDT[2]
     }
 
+    /**
+     * Вторая производная omega_j''(t) (phi заменяется на phi''). Нужна для xi^<0>
+     * (де Бура--Фикса r=0). Кусочно-постоянна по слоям; в узлах сетки omega_j'' терпит
+     * разрыв (omega_j in C^1 \ C^2), поэтому значение в узле берётся по правому куску.
+     */
+    fun omegaDeriv2(j: Int, t: Double): Double {
+        if (t < grid.x(j) || t > grid.x(j + 3)) return 0.0
+        val k = intervalOf(t)
+        val slot = j - (k - 2)
+        if (slot < 0 || slot > 2) return 0.0
+        val inv = invM[k]
+        val phiDDT = sys.phiDD(t)
+        return inv[slot][0] * phiDDT[0] + inv[slot][1] * phiDDT[1] + inv[slot][2] * phiDDT[2]
+    }
+
     /** Значение сплайна u_h(t) = sum_j c_j omega_j(t), c размера n+2. */
     fun evalSpline(c: DoubleArray, t: Double): Double {
         val k = intervalOf(t)
@@ -107,6 +122,17 @@ class MinimalSplineBasis(val sys: GeneratingSystem, val grid: Grid) {
         val k = intervalOf(t)
         val inv = invM[k]
         val p = sys.phiD(t)
+        val w0 = inv[0][0] * p[0] + inv[0][1] * p[1] + inv[0][2] * p[2]
+        val w1 = inv[1][0] * p[0] + inv[1][1] * p[1] + inv[1][2] * p[2]
+        val w2 = inv[2][0] * p[0] + inv[2][1] * p[1] + inv[2][2] * p[2]
+        return c[k] * w0 + c[k + 1] * w1 + c[k + 2] * w2
+    }
+
+    /** Значение второй производной сплайна u_h''(t) (для xi^{<0>}-идемпотентности). */
+    fun evalSplineDeriv2(c: DoubleArray, t: Double): Double {
+        val k = intervalOf(t)
+        val inv = invM[k]
+        val p = sys.phiDD(t)
         val w0 = inv[0][0] * p[0] + inv[0][1] * p[1] + inv[0][2] * p[2]
         val w1 = inv[1][0] * p[0] + inv[1][1] * p[1] + inv[1][2] * p[2]
         val w2 = inv[2][0] * p[0] + inv[2][1] * p[1] + inv[2][2] * p[2]

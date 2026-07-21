@@ -16,15 +16,20 @@ import numerics.*
  * функцию и её производную; семейства без производных её просто игнорируют.
  */
 interface ApproxFunctional {
-    /** chi_j(f) по функции f и её производной fD. */
-    fun apply(f: (Double) -> Double, fD: (Double) -> Double): Double
+    /**
+     * chi_j(f) по функции f, её первой производной fD и второй производной fDD.
+     * Семейства без производных (theta,mu,lambda) игнорируют fD/fDD; xi^<1>,xi^<2>
+     * используют только fD; xi^<0> использует и fDD. fDD по умолчанию нулевая, чтобы
+     * не ломать существующие двухаргументные вызовы (theta/mu/lambda и xi^<1>).
+     */
+    fun apply(f: (Double) -> Double, fD: (Double) -> Double, fDD: (Double) -> Double = { 0.0 }): Double
 
     /** Сумма |коэффициентов| — для оценки нормы C_chi. */
     fun absSum(): Double
 }
 
-/** Удобная обёртка: chi_j(f) без явной производной (производная = 0). */
-fun ApproxFunctional.apply(f: (Double) -> Double): Double = apply(f) { 0.0 }
+/** Удобная обёртка: chi_j(f) без явных производных (производные = 0). */
+fun ApproxFunctional.apply(f: (Double) -> Double): Double = apply(f, { 0.0 }, { 0.0 })
 
 /**
  * Семейство (квази)проекционных функционалов {chi_j}_{j=-2}^{n-1} и (квази)проектор
@@ -40,12 +45,18 @@ abstract class FunctionalFamily(val basis: MinimalSplineBasis, val name: String)
     abstract val isProjector: Boolean
     abstract val usesDerivative: Boolean
 
+    /** true для семейств, требующих ВТОРУЮ производную образа (xi^<0>). */
+    open val usesSecondDerivative: Boolean = false
+
     /** Функционал chi_j, j = -2..n-1. */
     abstract fun chi(j: Int): ApproxFunctional
 
     /** Коэффициенты проекции P_chi g = sum chi_j(g) omega_j: вектор (chi_j(g)) размера n+2. */
-    fun projectorCoeffs(g: (Double) -> Double, gD: (Double) -> Double = { 0.0 }): DoubleArray =
-        DoubleArray(n + 2) { chi(it - 2).apply(g, gD) }
+    fun projectorCoeffs(
+        g: (Double) -> Double,
+        gD: (Double) -> Double = { 0.0 },
+        gDD: (Double) -> Double = { 0.0 },
+    ): DoubleArray = DoubleArray(n + 2) { chi(it - 2).apply(g, gD, gDD) }
 
     /** Максимум sum_k |коэффициенты| по всем j — константа C_chi. */
     fun cChi(): Double = (-2..n - 1).maxOf { chi(it).absSum() }
@@ -58,7 +69,7 @@ abstract class FunctionalFamily(val basis: MinimalSplineBasis, val name: String)
 /** Линейная комбинация значений f в точках nodes с коэффициентами coeffs (только значения). */
 class ValueFunctional(val nodes: DoubleArray, val coeffs: DoubleArray) : ApproxFunctional {
     init { require(nodes.size == coeffs.size) }
-    override fun apply(f: (Double) -> Double, fD: (Double) -> Double): Double {
+    override fun apply(f: (Double) -> Double, fD: (Double) -> Double, fDD: (Double) -> Double): Double {
         var s = 0.0
         for (k in nodes.indices) s += coeffs[k] * f(nodes[k])
         return s
@@ -131,20 +142,44 @@ class ProjFunctionals(basis: MinimalSplineBasis) : FunctionalFamily(basis, "thet
  * При cD=0 и chаистом значении — краевой u(x_0)/u(x_n).
  */
 class DerivFunctional(val node: Double, val cD: Double) : ApproxFunctional {
-    override fun apply(f: (Double) -> Double, fD: (Double) -> Double): Double = f(node) + cD * fD(node)
+    override fun apply(f: (Double) -> Double, fD: (Double) -> Double, fDD: (Double) -> Double): Double =
+        f(node) + cD * fD(node)
     override fun absSum(): Double = 1.0 + abs(cD)
 }
 
 /**
- * Семейство xi_j^{<1>}(u) = u(x_{j+1}) + C_j u'(x_{j+1}) (monograph, формула xi^{<1>}):
- * C_j = ((sigma_{j+2}-sigma_{j+1})rho'_{j+2} - (rho_{j+2}-rho_{j+1})sigma'_{j+2})
- *       / (rho'_{j+2}sigma'_{j+1} - rho'_{j+1}sigma'_{j+2}).
- * ПРОЕКТОР (биортогональность (bior_m=2)); работает в C^1.
- * Краевые j=-2,n-1: чистые значения u(x_0), u(x_n).
+ * Функционал вида xi^<0>(u) = u(node) + c1*u'(node) + c2*u''(node) (де Бура--Фикса r=0):
+ * использует значение, ПЕРВУЮ и ВТОРУЮ производные в одном узле.
  */
-class DeBoorFixFunctionals(basis: MinimalSplineBasis) : FunctionalFamily(basis, "xi") {
+class SecondDerivFunctional(val node: Double, val c1: Double, val c2: Double) : ApproxFunctional {
+    override fun apply(f: (Double) -> Double, fD: (Double) -> Double, fDD: (Double) -> Double): Double =
+        f(node) + c1 * fD(node) + c2 * fDD(node)
+    override fun absSum(): Double = 1.0 + abs(c1) + abs(c2)
+}
+
+/**
+ * Семейство функционалов де Бура--Фикса xi_j^{<r>}, r in {0,1,2}
+ * (deboorfix-spec.md, метки eq:xi0, eq:xi0-coef, eq:xi). Выбор r — параметр
+ * конструктора (r=1 по умолчанию — обратная совместимость). Все три — ПРОЕКТОРЫ
+ * (биортогональность xi_i(omega_j)=delta_ij).
+ *
+ *  - xi^<1>(u) = u(x_{j+1}) + C1_j u'(x_{j+1}),
+ *      C1_j = ((sigma_{j+2}-sigma_{j+1})rho'_{j+2} - (rho_{j+2}-rho_{j+1})sigma'_{j+2}) / W_j;
+ *  - xi^<2>(u) = u(x_{j+2}) + C2_j u'(x_{j+2}),
+ *      C2_j = ((sigma_{j+2}-sigma_{j+1})rho'_{j+1} - (rho_{j+2}-rho_{j+1})sigma'_{j+1}) / W_j;
+ *      W_j = rho'_{j+2}sigma'_{j+1} - rho'_{j+1}sigma'_{j+2};
+ *  - xi^<0>(u) = u(x_j) + (N1_j/Delta_j) u'(x_j) + (N2_j/Delta_j) u''(x_j)
+ *      (работает в C^2), коэффициенты — eq:xi0-coef.
+ *
+ * Краевые j=-2, n-1: чистые значения u(x_0), u(x_n) (ДОПУЩЕНИЕ по аналогии с theta,
+ * deboorfix-spec.md §1.3, R1 — подтверждается тестом биортогональности).
+ */
+class DeBoorFixFunctionals(basis: MinimalSplineBasis, val r: Int = 1) :
+    FunctionalFamily(basis, if (r == 1) "xi" else "xi<$r>") {
+    init { require(r in 0..2) { "DeBoorFix: r must be in {0,1,2}, got $r" } }
     override val isProjector = true
     override val usesDerivative = true
+    override val usesSecondDerivative = (r == 0)
     private val sys = basis.sys
     private val funcs: Array<ApproxFunctional> = Array(n + 2) { buildXi(it - 2) }
     override fun chi(j: Int): ApproxFunctional = funcs[j + 2]
@@ -152,6 +187,15 @@ class DeBoorFixFunctionals(basis: MinimalSplineBasis) : FunctionalFamily(basis, 
     private fun buildXi(j: Int): ApproxFunctional {
         if (j == -2) return DerivFunctional(grid.x(0), 0.0)
         if (j == n - 1) return DerivFunctional(grid.x(n), 0.0)
+        return when (r) {
+            0 -> buildXi0(j)
+            2 -> buildXi2(j)
+            else -> buildXi1(j)
+        }
+    }
+
+    /** xi^<1>_j: узел x_{j+1}, коэффициент C1_j. */
+    private fun buildXi1(j: Int): ApproxFunctional {
         val x1 = grid.x(j + 1); val x2 = grid.x(j + 2)
         val rho1 = sys.rho(x1); val rho2 = sys.rho(x2)
         val sig1 = sys.sigma(x1); val sig2 = sys.sigma(x2)
@@ -159,10 +203,53 @@ class DeBoorFixFunctionals(basis: MinimalSplineBasis) : FunctionalFamily(basis, 
         val sigD1 = sys.sigmaD(x1); val sigD2 = sys.sigmaD(x2)
         val denom = rhoD2 * sigD1 - rhoD1 * sigD2
         require(kotlin.math.abs(denom) >= 1e-14) {
-            "buildXi(j=$j): degenerate Wronskian rhoD2*sigD1 - rhoD1*sigD2=$denom (near-zero denominator)"
+            "buildXi1(j=$j): degenerate Wronskian rhoD2*sigD1 - rhoD1*sigD2=$denom (near-zero denominator)"
         }
         val cD = ((sig2 - sig1) * rhoD2 - (rho2 - rho1) * sigD2) / denom
         return DerivFunctional(x1, cD)
+    }
+
+    /** xi^<2>_j: узел x_{j+2}, коэффициент C2_j (тот же знаменатель W_j, штрихи в x_{j+1}). */
+    private fun buildXi2(j: Int): ApproxFunctional {
+        val x1 = grid.x(j + 1); val x2 = grid.x(j + 2)
+        val rho1 = sys.rho(x1); val rho2 = sys.rho(x2)
+        val sig1 = sys.sigma(x1); val sig2 = sys.sigma(x2)
+        val rhoD1 = sys.rhoD(x1); val rhoD2 = sys.rhoD(x2)
+        val sigD1 = sys.sigmaD(x1); val sigD2 = sys.sigmaD(x2)
+        val denom = rhoD2 * sigD1 - rhoD1 * sigD2
+        require(kotlin.math.abs(denom) >= 1e-14) {
+            "buildXi2(j=$j): degenerate Wronskian rhoD2*sigD1 - rhoD1*sigD2=$denom (near-zero denominator)"
+        }
+        val cD = ((sig2 - sig1) * rhoD1 - (rho2 - rho1) * sigD1) / denom
+        return DerivFunctional(x2, cD)
+    }
+
+    /**
+     * xi^<0>_j: узел x_j, коэффициенты N1_j/Delta_j (при u') и N2_j/Delta_j (при u'')
+     * по eq:xi0-coef (перенесено дословно).
+     */
+    private fun buildXi0(j: Int): ApproxFunctional {
+        val xj = grid.x(j); val xj1 = grid.x(j + 1); val xj2 = grid.x(j + 2)
+        // Значения rho, sigma и производные в трёх узлах.
+        val rj = sys.rho(xj); val sj = sys.sigma(xj)
+        val rDj = sys.rhoD(xj); val sDj = sys.sigmaD(xj)
+        val rDDj = sys.rhoDD(xj); val sDDj = sys.sigmaDD(xj)
+        val rj1 = sys.rho(xj1); val sj1 = sys.sigma(xj1)
+        val rDj1 = sys.rhoD(xj1); val sDj1 = sys.sigmaD(xj1)
+        val rj2 = sys.rho(xj2); val sj2 = sys.sigma(xj2)
+        val rDj2 = sys.rhoD(xj2); val sDj2 = sys.sigmaD(xj2)
+
+        val delta = (rDj1 * sDj2 - rDj2 * sDj1) * (rDj * sDDj - rDDj * sDj)
+        require(kotlin.math.abs(delta) >= 1e-14) {
+            "buildXi0(j=$j): degenerate denominator Delta_j=$delta (near-zero)"
+        }
+        val n1 = (rj1 * sDj1 - rDj1 * sj1) * (rDDj * sDj2 - rDj2 * sDDj) +
+            (rDj1 * sDj2 - rDj2 * sDj1) * (rDDj * sj - rj * sDDj) +
+            (rj2 * sDj2 - rDj2 * sj2) * (rDj1 * sDDj - rDDj * sDj1)
+        val n2 = (rj1 * sDj1 - rDj1 * sj1) * (rDj2 * sDj - rDj * sDj2) +
+            (rDj1 * sDj2 - rDj2 * sDj1) * (rj * sDj - rDj * sj) +
+            (rj2 * sDj2 - rDj2 * sj2) * (rDj * sDj1 - rDj1 * sDj)
+        return SecondDerivFunctional(xj, n1 / delta, n2 / delta)
     }
 }
 
