@@ -254,6 +254,63 @@ class DeBoorFixFunctionals(basis: MinimalSplineBasis, val r: Int = 1) :
 }
 
 // ----------------------------------------------------------------------------
+// 6.2b xitilde — ДИСКРЕТИЗОВАННЫЕ (differentiation-free) ФУНКЦИОНАЛЫ де Бура--Фикса
+// ----------------------------------------------------------------------------
+
+/**
+ * Дискретизованные (differentiation-free) функционалы де Бура--Фикса
+ * xitilde^{<r>}_j, r in {1,2} (main.tex §3.4, eq:fd и две формулы \tilde\xi;
+ * дизайн `.tasks/nystrom-diff-free/design-spec.md`). Производная f'(x_k) в исходных
+ * xi^{<1>},xi^{<2>} заменена ЦЕНТРАЛЬНОЙ разделённой разностью узловых значений
+ *   f'(x_k) ~ (f(x_{k+1}) - f(x_{k-1})) / (x_{k+1} - x_{k-1}),
+ * которая корректна и на неравномерных сетках. Итог:
+ *   xitilde^{<1>}_j(f) = f(x_{j+1}) + w1_j (f(x_{j+2}) - f(x_j)) / (x_{j+2} - x_j),
+ *   xitilde^{<2>}_j(f) = f(x_{j+2}) + w2_j (f(x_{j+3}) - f(x_{j+1})) / (x_{j+3} - x_{j+1}),
+ * где множители w1_j = A^{<1>}_j, w2_j = A^{<2>}_j — В ТОЧНОСТИ коэффициенты при
+ * производной из DeBoorFixFunctionals (buildXi1/buildXi2). Сплайновая алгебра НЕ
+ * пересчитывается: множитель извлекается из DerivFunctional.cD исходного семейства.
+ *
+ * Функционалы VALUE-ONLY (usesDerivative=false) и представлены как ValueFunctional,
+ * поэтому совместимы с узловой квадратурой Nyström (eq:nyval) без изменений в солверах.
+ * Оператор P_xitilde — КВАЗИИНТЕРПОЛЯНТ, не проектор (isProjector=false): точная
+ * биортогональность при FD-замене в общем случае теряется (design-spec §2, §7).
+ * Краевые j=-2, n-1 — чистые значения f(x_0), f(x_n) (как в theta/xi).
+ *
+ * xitilde^{<0>} НЕ реализован: он требует f'' в узле, где сплайн вырождается
+ * (design-spec §5.2, remark после eq:fd) — исключён по построению.
+ */
+class DiscreteDeBoorFixFunctionals(basis: MinimalSplineBasis, val r: Int = 1) :
+    FunctionalFamily(basis, if (r == 1) "xitilde" else "xitilde<$r>") {
+    init { require(r in 1..2) { "DiscreteDeBoorFix: r must be in {1,2}, got $r" } }
+    override val isProjector = false
+    override val usesDerivative = false
+    private val raw = DeBoorFixFunctionals(basis, r)
+    private val funcs: Array<ApproxFunctional> = Array(n + 2) { buildXiTilde(it - 2) }
+    override fun chi(j: Int): ApproxFunctional = funcs[j + 2]
+
+    private fun buildXiTilde(j: Int): ApproxFunctional {
+        if (j == -2) return ValueFunctional(doubleArrayOf(grid.x(0)), doubleArrayOf(1.0))
+        if (j == n - 1) return ValueFunctional(doubleArrayOf(grid.x(n)), doubleArrayOf(1.0))
+        // Множитель при производной — тот же A^{<r>}_j, что и в исходном xi.
+        val w = (raw.chi(j) as DerivFunctional).cD
+        // Узел опоры и соседи для центральной разности вокруг него.
+        val (node, left, right) = when (r) {
+            2 -> Triple(grid.x(j + 2), grid.x(j + 1), grid.x(j + 3))
+            else -> Triple(grid.x(j + 1), grid.x(j), grid.x(j + 2))
+        }
+        val denom = right - left
+        require(kotlin.math.abs(denom) >= 1e-14) {
+            "buildXiTilde(j=$j,r=$r): degenerate divided-difference span x=$right - x=$left = $denom"
+        }
+        // f(node) + w (f(right) - f(left))/denom как комбинация значений.
+        return ValueFunctional(
+            doubleArrayOf(left, node, right),
+            doubleArrayOf(-w / denom, 1.0, w / denom),
+        )
+    }
+}
+
+// ----------------------------------------------------------------------------
 // 6.3 mu — УСРЕДНЯЮЩИЕ ФУНКЦИОНАЛЫ (monograph, (mu_j(f)), сетка Y, theta=1/2)
 // ----------------------------------------------------------------------------
 

@@ -53,5 +53,35 @@ class Grid(val n: Int, interior: DoubleArray) {
                 val u = i.toDouble() / n
                 a + (b - a) * (u + amp * Math.sin(2.0 * Math.PI * u))
             })
+
+        /**
+         * Геометрическая (неравномерная) сетка семейства sn-article:
+         *   x_j = a + (b-a) (q^j - 1)/(q^n - 1),  q = R^{1/(n-1)},  j = 0..n.
+         *
+         * Фиксированное отношение крайних шагов h_{n-1}/h_0 = R; шаги растут
+         * геометрически (h_j = (b-a) q^j (q-1)/(q^n-1)), так что локальный параметр
+         * квазиравномерности постоянен: h_j/h_{j-1} = q =: mu_n, mu_n -> 1 при n->inf.
+         * Сетка существенно неравномерна, но локально квазиравномерна.
+         *
+         * @param n число внутренних интервалов (>= 2).
+         * @param R отношение крайних шагов (> 0). R=1 вырождается в равномерную.
+         */
+        fun geometric(n: Int, a: Double = 0.0, b: Double = 1.0, R: Double = 2.0): Grid {
+            require(n >= 2) { "geometric: требуется n >= 2, получено n=$n" }
+            require(R > 0.0) { "geometric: требуется R > 0, получено R=$R" }
+            val q = Math.pow(R, 1.0 / (n - 1))
+            if (kotlin.math.abs(q - 1.0) < 1e-15) {
+                // Вырожденный случай R=1: равномерная сетка (q^n - 1 -> 0).
+                return Grid(n, DoubleArray(n + 1) { a + (b - a) * it / n })
+            }
+            val denom = Math.pow(q, n.toDouble()) - 1.0
+            return Grid(n, DoubleArray(n + 1) { j ->
+                when (j) {
+                    0 -> a
+                    n -> b
+                    else -> a + (b - a) * (Math.pow(q, j.toDouble()) - 1.0) / denom
+                }
+            })
+        }
     }
 }
