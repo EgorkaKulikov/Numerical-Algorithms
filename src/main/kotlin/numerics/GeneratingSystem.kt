@@ -38,21 +38,51 @@ class GeneratingSystem(
             rhoDD = { 0.0 }, sigmaDD = { 2.0 },
         )
 
-        /** Гиперболическая phi^H(t) = (1, sinh t, cosh t)^T. */
-        val H = GeneratingSystem(
-            name = "H",
-            rho = { t -> Math.sinh(t) }, sigma = { t -> Math.cosh(t) },
-            rhoD = { t -> Math.cosh(t) }, sigmaD = { t -> Math.sinh(t) },
-            rhoDD = { t -> Math.sinh(t) }, sigmaDD = { t -> Math.cosh(t) },
-        )
+        /** Гиперболическая phi^H(t) = (1, sinh t, cosh t)^T (единичная частота). */
+        val H = hyperbolic(1.0, name = "H")
 
-        /** Тригонометрическая phi^T(t) = (1, sin t, cos t)^T. */
-        val T = GeneratingSystem(
-            name = "T",
-            rho = { t -> Math.sin(t) }, sigma = { t -> Math.cos(t) },
-            rhoD = { t -> Math.cos(t) }, sigmaD = { t -> -Math.sin(t) },
-            rhoDD = { t -> -Math.sin(t) }, sigmaDD = { t -> -Math.cos(t) },
-        )
+        /** Тригонометрическая phi^T(t) = (1, sin t, cos t)^T (единичная частота). */
+        val T = trig(1.0, name = "T")
+
+        /**
+         * Гиперболическая система с частотой omega:
+         *   phi(t) = (1, sinh(omega t), cosh(omega t))^T,
+         *   rho'=omega cosh(omega t), sigma'=omega sinh(omega t),
+         *   rho''=omega^2 sinh(omega t), sigma''=omega^2 cosh(omega t).
+         * Span точно представляет sinh(omega t), cosh(omega t) (частотная настройка).
+         *
+         * @param omega частота (> 0 для невырожденной системы).
+         * @param name имя системы (по умолчанию "H(omega)").
+         */
+        fun hyperbolic(omega: Double, name: String = "H($omega)"): GeneratingSystem =
+            GeneratingSystem(
+                name = name,
+                rho = { t -> Math.sinh(omega * t) }, sigma = { t -> Math.cosh(omega * t) },
+                rhoD = { t -> omega * Math.cosh(omega * t) }, sigmaD = { t -> omega * Math.sinh(omega * t) },
+                rhoDD = { t -> omega * omega * Math.sinh(omega * t) },
+                sigmaDD = { t -> omega * omega * Math.cosh(omega * t) },
+            )
+
+        /**
+         * Тригонометрическая система с частотой omega:
+         *   phi(t) = (1, sin(omega t), cos(omega t))^T,
+         *   rho'=omega cos(omega t), sigma'=-omega sin(omega t),
+         *   rho''=-omega^2 sin(omega t), sigma''=-omega^2 cos(omega t).
+         * Span точно представляет sin(omega t), cos(omega t) (частотная настройка).
+         * ЗАМЕЧАНИЕ: неотрицательность минимальных сплайнов требует h*omega < pi
+         * (шаг сетки достаточно мелкий относительно частоты).
+         *
+         * @param omega частота (> 0 для невырожденной системы).
+         * @param name имя системы (по умолчанию "T(omega)").
+         */
+        fun trig(omega: Double, name: String = "T($omega)"): GeneratingSystem =
+            GeneratingSystem(
+                name = name,
+                rho = { t -> Math.sin(omega * t) }, sigma = { t -> Math.cos(omega * t) },
+                rhoD = { t -> omega * Math.cos(omega * t) }, sigmaD = { t -> -omega * Math.sin(omega * t) },
+                rhoDD = { t -> -omega * omega * Math.sin(omega * t) },
+                sigmaDD = { t -> -omega * omega * Math.cos(omega * t) },
+            )
     }
 }
 

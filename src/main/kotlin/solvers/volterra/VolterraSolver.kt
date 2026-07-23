@@ -195,6 +195,25 @@ class ModelProblem(
         )
 
         /**
+         * M3 (§4, headline): Volterra II с ядром экспоненциальной памяти
+         * K=e^{-(t-s)} (K(t,t)=1≠0, "viscoelastic aftereffect"), u*=cos(3 t)
+         * ("oscillation"). Согласованная порождающая система: GeneratingSystem.trig(3.0).
+         * f строится из u* точной квадратурой (manufactured solution).
+         */
+        val M3 = ModelProblem(
+            name = "M3",
+            kernel = KernelV(
+                { t, s -> Math.exp(-(t - s)) },
+                { t, s -> -Math.exp(-(t - s)) },
+                { t, s -> Math.exp(-(t - s)) },
+                { t, s -> Math.exp(-(t - s)) },
+            ),
+            exact = { t -> Math.cos(3.0 * t) }, exactDeriv = { t -> -3.0 * Math.sin(3.0 * t) },
+            secondKind = true,
+            exactDeriv2 = { t -> -9.0 * Math.cos(3.0 * t) },
+        )
+
+        /**
          * V1: K=1+t-s (K(t,t)=1≠0), u*=cos t, уравнение I рода \mathcal V u = f.
          * Корректна (r3): сводится к V2 однократным дифференцированием (m=1, т.к. K(t,t)≠0).
          */

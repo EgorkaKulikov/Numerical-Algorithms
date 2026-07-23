@@ -149,6 +149,28 @@ class ModelProblem(
             exactDeriv2 = { t -> Math.exp(t) },
         )
 
+        /** M1 (§4, control): алиас F2 (K=1/(1+t+s), u*=1/(t+1)). */
+        val M1 = F2
+
+        /**
+         * M2 (§4): Fredholm II с ядром гауссова сглаживания K=e^{-(t-s)^2}
+         * ("Gaussian smoothing"), u*=cosh(1.5 t) ("catenary-type solution").
+         * Согласованная порождающая система: GeneratingSystem.hyperbolic(1.5).
+         * f строится из u* точной квадратурой (manufactured solution).
+         */
+        val M2 = ModelProblem(
+            name = "M2",
+            kernel = KernelF(
+                { t, s -> Math.exp(-(t - s) * (t - s)) },
+                { t, s -> -2.0 * (t - s) * Math.exp(-(t - s) * (t - s)) },
+                { t, s -> 2.0 * (t - s) * Math.exp(-(t - s) * (t - s)) },
+                { t, s -> (4.0 * (t - s) * (t - s) - 2.0) * Math.exp(-(t - s) * (t - s)) },
+            ),
+            exact = { t -> Math.cosh(1.5 * t) }, exactDeriv = { t -> 1.5 * Math.sinh(1.5 * t) },
+            secondKind = true,
+            exactDeriv2 = { t -> 2.25 * Math.cosh(1.5 * t) },
+        )
+
         /** F1: K=e^{-(t-s)^2}, u*=e^t, уравнение I рода (Wazwaz). */
         val F1 = ModelProblem(
             name = "F1",
@@ -822,6 +844,48 @@ object Tables {
         }
         println("   [риск R2: обусловленность M propto alpha^{-1}; выбор alpha — эвристика r2]")
     }
+
+    /**
+     * F1 (Wazwaz, alpha=1e-10) на функционалах де Бура--Фикса: база/Слоан, базисы B/H/T.
+     * Инжектируются xi<1> и xi<2> (используют только 1-ю производную; инфраструктура F1
+     * их поддерживает: ядро задаёт kT, FirstKindSolver прокидывает fEffDeriv). xi<0>
+     * требует 2-й производной (kTT ядра F1 и fEffDeriv2) — прогоняется как диагностика.
+     */
+    fun tableF1Xi() {
+        val p = ModelProblem.F1
+        val nsF1 = listOf(8, 16, 32)
+        println("\n--- F1xi Wazwaz (alpha=1e-10): xi<1>,xi<2>, базисы B/H/T: база/Слоан (E_h,p_h) ---")
+        for (fam in listOf("xi1", "xi2")) {
+            println("  семейство $fam:")
+            for (sys in listOf(GeneratingSystem.B, GeneratingSystem.H, GeneratingSystem.T)) {
+                val errsB = ArrayList<Double>(); val errsS = ArrayList<Double>()
+                for (nn in nsF1) {
+                    val grid = Grid.uniform(nn)
+                    val basis = MinimalSplineBasis(sys, grid)
+                    val op = FredholmOperator(p.kernel, grid, quad)
+                    val solver = FirstKindSolver(p, basis, family(fam, basis), op, alpha = 1e-10)
+                    errsB.add(errorEh({ t -> p.exact(t) }, solver.base().eval, grid))
+                    errsS.add(errorEh({ t -> p.exact(t) }, solver.sloan().eval, grid))
+                }
+                val pB = orders(errsB); val pS = orders(errsS)
+                println("   базис ${sys.name}:")
+                for (i in nsF1.indices) println("     n=%4d | база:%s(%s) | Слоан:%s(%s)".format(
+                    nsF1[i], Fmt.e(errsB[i]), Fmt.p(pB[i]), Fmt.e(errsS[i]), Fmt.p(pS[i])))
+            }
+        }
+        println("  [диагностика xi0 (kTT ядра F1 и fEffDeriv2 не заданы ⇒ 2-е произв.=0)]:")
+        try {
+            val grid = Grid.uniform(8)
+            val basis = MinimalSplineBasis(GeneratingSystem.B, grid)
+            val op = FredholmOperator(p.kernel, grid, quad)
+            val solver = FirstKindSolver(p, basis, family("xi0", basis), op, alpha = 1e-10)
+            val eh = errorEh({ t -> p.exact(t) }, solver.base().eval, grid)
+            println("   базис B n=8 xi0 E_h(база)=%s (некорректно без K_tt/f'')".format(Fmt.e(eh)))
+        } catch (e: Exception) {
+            println("   xi0 недоступен: ${e.message}")
+        }
+        println("   [риск R2: обусловленность M propto alpha^{-1}; выбор alpha — эвристика r2]")
+    }
 }
 
 fun main() {
@@ -852,8 +916,8 @@ fun main() {
         Tables.tableFamilies(p, sys)
         Tables.tableDeBoorFix(p)
     }
-    // Один пример I рода (Wazwaz).
-    Tables.tableF1()
+    // Один пример I рода (Wazwaz) — на функционалах де Бура--Фикса xi.
+    Tables.tableF1Xi()
     println("\nРасчёт завершён.")
 }
 

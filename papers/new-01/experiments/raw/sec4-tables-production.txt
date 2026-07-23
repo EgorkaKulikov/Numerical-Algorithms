@@ -1,0 +1,126 @@
+### Sec4Tables production driver | papers/new-01 §4
+### E_h = sup over 100n+1 control grid (errorEh); p_h from general max-step h.
+### Model problems: M1=F2(1/(1+t+s),1/(t+1)), M2=Gaussian-blur/cosh(1.5t), M3=exp-memory/cos(3t).
+
+==============================================================================
+BLOCK H1/H2 (uniform): theta(B) baseline, xi1(B), xi1(H); base/Sloan/Kulk/itKulk
+==============================================================================
+[H1H2-F] problem=F2 basis=B func=theta grid=uniform  (h: 0.1250, 0.0625, 0.0313, 0.0156)
+   base    n=  8 E=1.014e-04 p=3.02  n= 16 E=1.246e-05 p=3.03  n= 32 E=1.521e-06 p=3.02  n= 64 E=1.871e-07 p=---
+   sloan   n=  8 E=4.808e-06 p=4.27  n= 16 E=2.497e-07 p=4.32  n= 32 E=1.251e-08 p=4.26  n= 64 E=6.511e-10 p=---
+   kulk    n=  8 E=7.750e-11 p=7.35  n= 16 E=4.736e-13 p=7.41  n= 32 E=2.776e-15 p=0.40  n= 64 E=2.109e-15 p=---
+   itkulk  n=  8 E=2.988e-12 p=8.59  n= 16 E=7.772e-15 p=4.13  n= 32 E=4.441e-16 p=0.00  n= 64 E=4.441e-16 p=---
+[H1H2-F] problem=F2 basis=B func=xi1 grid=uniform  (h: 0.1250, 0.0625, 0.0313, 0.0156)
+   base    n=  8 E=6.672e-04 p=2.86  n= 16 E=9.160e-05 p=2.93  n= 32 E=1.202e-05 p=2.96  n= 64 E=1.540e-06 p=---
+   sloan   n=  8 E=2.344e-04 p=2.97  n= 16 E=2.993e-05 p=2.99  n= 32 E=3.776e-06 p=2.99  n= 64 E=4.740e-07 p=---
+   kulk    n=  8 E=4.193e-08 p=5.77  n= 16 E=7.680e-10 p=5.88  n= 32 E=1.300e-11 p=5.94  n= 64 E=2.122e-13 p=---
+   itkulk  n=  8 E=1.558e-08 p=5.87  n= 16 E=2.669e-10 p=5.94  n= 32 E=4.352e-12 p=5.95  n= 64 E=7.028e-14 p=---
+[H1H2-F] problem=F2 basis=H func=xi1 grid=uniform  (h: 0.1250, 0.0625, 0.0313, 0.0156)
+   base    n=  8 E=5.253e-04 p=2.85  n= 16 E=7.282e-05 p=2.92  n= 32 E=9.603e-06 p=2.96  n= 64 E=1.233e-06 p=---
+   sloan   n=  8 E=1.724e-04 p=2.97  n= 16 E=2.197e-05 p=2.99  n= 32 E=2.767e-06 p=3.00  n= 64 E=3.470e-07 p=---
+   kulk    n=  8 E=2.247e-08 p=5.73  n= 16 E=4.247e-10 p=5.86  n= 32 E=7.289e-12 p=5.93  n= 64 E=1.195e-13 p=---
+   itkulk  n=  8 E=7.523e-09 p=5.84  n= 16 E=1.312e-10 p=5.93  n= 32 E=2.155e-12 p=5.93  n= 64 E=3.542e-14 p=---
+[H1H2-F] problem=M2 basis=B func=theta grid=uniform  (h: 0.1250, 0.0625, 0.0313, 0.0156)
+   base    n=  8 E=1.407e-04 p=3.18  n= 16 E=1.553e-05 p=3.08  n= 32 E=1.841e-06 p=3.03  n= 64 E=2.247e-07 p=---
+   sloan   n=  8 E=2.684e-05 p=4.33  n= 16 E=1.338e-06 p=4.20  n= 32 E=7.283e-08 p=4.11  n= 64 E=4.211e-09 p=---
+   kulk    n=  8 E=3.120e-10 p=7.46  n= 16 E=1.771e-12 p=6.92  n= 32 E=1.465e-14 p=1.46  n= 64 E=5.329e-15 p=---
+   itkulk  n=  8 E=9.052e-11 p=8.60  n= 16 E=2.327e-13 p=6.23  n= 32 E=3.109e-15 p=1.22  n= 64 E=1.332e-15 p=---
+[H1H2-F] problem=M2 basis=B func=xi1 grid=uniform  (h: 0.1250, 0.0625, 0.0313, 0.0156)
+   base    n=  8 E=1.766e-03 p=2.87  n= 16 E=2.412e-04 p=2.94  n= 32 E=3.143e-05 p=2.97  n= 64 E=4.010e-06 p=---
+   sloan   n=  8 E=1.381e-03 p=2.86  n= 16 E=1.908e-04 p=2.93  n= 32 E=2.506e-05 p=2.96  n= 64 E=3.210e-06 p=---
+   kulk    n=  8 E=2.113e-07 p=5.90  n= 16 E=3.529e-09 p=5.96  n= 32 E=5.673e-11 p=5.98  n= 64 E=9.002e-13 p=---
+   itkulk  n=  8 E=1.558e-07 p=5.93  n= 16 E=2.562e-09 p=5.97  n= 32 E=4.085e-11 p=5.98  n= 64 E=6.475e-13 p=---
+[H1H2-F] problem=M2 basis=H func=xi1 grid=uniform  (h: 0.1250, 0.0625, 0.0313, 0.0156)
+   base    n=  8 E=9.796e-04 p=2.87  n= 16 E=1.339e-04 p=2.94  n= 32 E=1.746e-05 p=2.97  n= 64 E=2.228e-06 p=---
+   sloan   n=  8 E=7.660e-04 p=2.85  n= 16 E=1.060e-04 p=2.93  n= 32 E=1.392e-05 p=2.96  n= 64 E=1.783e-06 p=---
+   kulk    n=  8 E=1.419e-07 p=5.90  n= 16 E=2.376e-09 p=5.96  n= 32 E=3.823e-11 p=5.98  n= 64 E=6.071e-13 p=---
+   itkulk  n=  8 E=1.045e-07 p=5.92  n= 16 E=1.725e-09 p=5.97  n= 32 E=2.754e-11 p=5.98  n= 64 E=4.372e-13 p=---
+
+==============================================================================
+BLOCK H3 (uniform): constant-beats-order. M2: theta(B) vs xi1(H_1.5); M3: theta(B) vs xi1(T_3)
+==============================================================================
+[H3-M2] problem=M2 grid=uniform
+   columns: theta(B)-base  theta(B)-kulk  xi1(H1.5)-base  xi1(H1.5)-kulk
+   n=  8 1.407e-04  3.120e-10  8.065e-13  1.554e-15
+   n= 16 1.553e-05  1.771e-12  1.775e-12  1.776e-15
+   n= 32 1.841e-06  1.465e-14  4.596e-11  3.775e-15
+   n= 64 2.247e-07  5.329e-15  1.224e-10  4.663e-15
+   p_h[theta(B)-base] = [3.18, 3.08, 3.03, ---]
+   p_h[theta(B)-kulk] = [7.46, 6.92, 1.46, ---]
+   p_h[xi1(H1.5)-base] = [-1.14, -4.69, -1.41, ---]
+   p_h[xi1(H1.5)-kulk] = [-0.19, -1.09, -0.30, ---]
+[H3-M3] problem=M3 grid=uniform
+   columns: theta(B)-base  theta(B)-kulk  xi1(T3)-base  xi1(T3)-kulk
+   n=  8 4.662e-04  1.769e-05  8.105e-15  4.441e-16
+   n= 16 5.506e-05  1.063e-06  3.175e-14  5.551e-16
+   n= 32 6.723e-06  6.548e-08  1.030e-13  1.110e-15
+   n= 64 8.325e-07  4.078e-09  9.887e-13  3.997e-15
+   p_h[theta(B)-base] = [3.08, 3.03, 3.01, ---]
+   p_h[theta(B)-kulk] = [4.06, 4.02, 4.01, ---]
+   p_h[xi1(T3)-base] = [-1.97, -1.70, -3.26, ---]
+   p_h[xi1(T3)-kulk] = [-0.32, -1.00, -1.85, ---]
+
+==============================================================================
+BLOCK H3-grid (Grid.geometric R=2): M3 headline theta(B) vs xi1(T_3) [works analogously]
+==============================================================================
+[H3grid-M3] problem=M3 grid=geometric
+   columns: theta(B)-base  theta(B)-kulk  xi1(T3)-base  xi1(T3)-kulk
+   n=  8 7.706e-04  4.524e-05  7.216e-15  3.331e-16
+   n= 16 8.229e-05  2.005e-06  3.320e-14  7.772e-16
+   n= 32 9.731e-06  1.139e-07  1.579e-13  1.332e-15
+   n= 64 1.189e-06  6.982e-09  1.202e-12  5.218e-15
+   p_h[theta(B)-base] = [3.24, 3.09, 3.04, ---]
+   p_h[theta(B)-kulk] = [4.52, 4.15, 4.03, ---]
+   p_h[xi1(T3)-base] = [-2.21, -2.25, -2.93, ---]
+   p_h[xi1(T3)-kulk] = [-1.23, -0.78, -1.97, ---]
+
+==============================================================================
+BLOCK H4 Nyström (uniform): theta-Nyström(B) vs xitilde-Nyström (r=1) on B and matched tuned basis
+==============================================================================
+   [honest: xitilde-Nyström order ~3, BELOW O(h^8) orient; error tracks the integrand K*u]
+[H4-M1] problem=F2 grid=uniform
+   columns: theta(B)-kulk[ref]  theta(B)-nyst  theta(B)-itnyst  xit1(B)-nyst  xit1(B)-itnyst
+   n=  8 7.750e-11  2.228e-05  9.488e-06  9.900e-04  4.664e-04
+   n= 16 4.736e-13  1.199e-06  5.063e-07  1.288e-04  6.031e-05
+   n= 32 2.776e-15  6.279e-08  2.650e-08  1.650e-05  7.699e-06
+   n= 64 2.109e-15  3.401e-09  1.439e-09  2.089e-06  9.734e-07
+   p_h[theta(B)-kulk[ref]] = [7.35, 7.41, 0.40, ---]
+   p_h[theta(B)-nyst] = [4.22, 4.26, 4.21, ---]
+   p_h[theta(B)-itnyst] = [4.23, 4.26, 4.20, ---]
+   p_h[xit1(B)-nyst] = [2.94, 2.97, 2.98, ---]
+   p_h[xit1(B)-itnyst] = [2.95, 2.97, 2.98, ---]
+[H4-M3] problem=M3 grid=uniform
+   columns: theta(B)-kulk[ref]  theta(B)-nyst  theta(B)-itnyst  xit1(B)-nyst  xit1(T3)-nyst  xit1(T3)-itnyst
+   n=  8 1.769e-05  5.314e-05  1.561e-05  3.471e-03  3.691e-03  1.809e-03
+   n= 16 1.063e-06  2.840e-06  7.962e-07  4.507e-04  4.737e-04  2.329e-04
+   n= 32 6.548e-08  1.693e-07  4.633e-08  5.722e-05  5.994e-05  2.960e-05
+   p_h[theta(B)-kulk[ref]] = [4.06, 4.02, ---]
+   p_h[theta(B)-nyst] = [4.23, 4.07, ---]
+   p_h[theta(B)-itnyst] = [4.29, 4.10, ---]
+   p_h[xit1(B)-nyst] = [2.95, 2.98, ---]
+   p_h[xit1(T3)-nyst] = [2.96, 2.98, ---]
+   p_h[xit1(T3)-itnyst] = [2.96, 2.98, ---]
+
+==============================================================================
+BLOCK F1/V1: F1 (Wazwaz alpha=1e-10) base/Sloan; V1 (reduction) base/Sloan/Kulk
+==============================================================================
+[F1] basis=B func=xi1 :
+   n=  8 base:E=9.972e-05 p=0.22 | sloan:E=2.173e-04 p=1.26
+   n= 16 base:E=8.560e-05 p=0.09 | sloan:E=9.068e-05 p=-0.14
+   n= 32 base:E=8.025e-05 p=--- | sloan:E=9.966e-05 p=---
+[F1] basis=H func=xi1 :
+   n=  8 base:E=5.193e-05 p=-0.51 | sloan:E=5.810e-05 p=-0.32
+   n= 16 base:E=7.380e-05 p=-0.09 | sloan:E=7.266e-05 p=-0.27
+   n= 32 base:E=7.850e-05 p=--- | sloan:E=8.789e-05 p=---
+[V1] basis=B func=xi1 :
+   n=  8 base:E=5.066e-05 p=2.94 | sloan:E=2.291e-05 p=2.87 | kulk:E=3.638e-07 p=3.86
+   n= 16 base:E=6.621e-06 p=2.98 | sloan:E=3.126e-06 p=2.94 | kulk:E=2.507e-08 p=3.96
+   n= 32 base:E=8.407e-07 p=2.99 | sloan:E=4.078e-07 p=2.97 | kulk:E=1.615e-09 p=3.98
+   n= 64 base:E=1.058e-07 p=--- | sloan:E=5.207e-08 p=--- | kulk:E=1.021e-10 p=---
+[V1] basis=H func=xi1 :
+   n=  8 base:E=1.012e-04 p=2.93 | sloan:E=4.576e-05 p=2.87 | kulk:E=7.213e-07 p=3.85
+   n= 16 base:E=1.324e-05 p=2.98 | sloan:E=6.249e-06 p=2.94 | kulk:E=5.004e-08 p=3.95
+   n= 32 base:E=1.681e-06 p=2.99 | sloan:E=8.156e-07 p=2.97 | kulk:E=3.228e-09 p=3.98
+   n= 64 base:E=2.115e-07 p=--- | sloan:E=1.041e-07 p=--- | kulk:E=2.041e-10 p=---
+
+### Sec4Tables done.
