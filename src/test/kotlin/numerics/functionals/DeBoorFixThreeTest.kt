@@ -8,7 +8,7 @@ import kotlin.test.assertTrue
 
 /**
  * Тесты трёх функционалов де Бура--Фикса xi^<0>, xi^<1>, xi^<2>
- * (deboorfix-spec.md §4(а),(б)). Стиль kotlin.test как в FunctionalsTest.
+ * Источники формул перечислены в docs/REFERENCES.md, раздел 2.
  */
 class DeBoorFixThreeTest {
     private val grids = listOf(Grid.uniform(8), Grid.quasiUniform(8))
