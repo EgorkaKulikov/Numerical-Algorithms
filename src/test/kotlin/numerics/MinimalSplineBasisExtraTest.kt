@@ -1,5 +1,6 @@
 package numerics
 
+import org.junit.jupiter.api.Tag
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -10,6 +11,7 @@ import kotlin.test.assertTrue
  * вычисление сплайна и его производной, согласие omegaDeriv с численной,
  * а также вырожденность узлов на правом тройном крае.
  */
+@Tag("fast")
 class MinimalSplineBasisExtraTest {
     private val grid = Grid.uniform(8)
     private val b = MinimalSplineBasis(GeneratingSystem.B, grid)

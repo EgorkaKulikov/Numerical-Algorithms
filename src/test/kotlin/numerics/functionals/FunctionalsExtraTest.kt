@@ -3,6 +3,7 @@ package numerics.functionals
 import numerics.GeneratingSystem
 import numerics.Grid
 import numerics.MinimalSplineBasis
+import org.junit.jupiter.api.Tag
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -13,6 +14,7 @@ import kotlin.test.assertTrue
  * FunctionalFamily/ValueFunctional/DerivFunctional. Главный инвариант
  * квазиинтерполянтов — точность на span{1,rho,sigma}: P_chi g = g.
  */
+@Tag("fast")
 class FunctionalsExtraTest {
     private val grid = Grid.uniform(8)
     private val basis = MinimalSplineBasis(GeneratingSystem.B, grid)

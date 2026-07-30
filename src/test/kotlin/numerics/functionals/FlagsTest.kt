@@ -3,6 +3,7 @@ package numerics.functionals
 import numerics.GeneratingSystem
 import numerics.Grid
 import numerics.MinimalSplineBasis
+import org.junit.jupiter.api.Tag
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -12,6 +13,7 @@ import kotlin.test.assertTrue
  * Тесты булевых флагов семейств: theta — проектор без производной, xi — проектор
  * с производной, mu/lambda — квазиинтерполянты. Покрывают геттеры свойств.
  */
+@Tag("fast")
 class FlagsTest {
     private val basis = MinimalSplineBasis(GeneratingSystem.B, Grid.uniform(8))
 

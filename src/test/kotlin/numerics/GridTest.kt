@@ -1,9 +1,11 @@
 package numerics
 
+import org.junit.jupiter.api.Tag
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
+@Tag("fast")
 class GridTest {
     @Test fun tripleKnotsAtEnds() {
         val g = Grid.uniform(8, 0.0, 1.0)

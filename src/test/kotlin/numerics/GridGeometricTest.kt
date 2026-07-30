@@ -1,5 +1,6 @@
 package numerics
 
+import org.junit.jupiter.api.Tag
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -11,6 +12,7 @@ import kotlin.test.assertTrue
  * отношение крайних шагов h_{n-1}/h_0 ~ R; локальная квазиравномерность
  * h_j/h_{j-1} в [mu^{-1}, mu] с mu=q (для этой сетки ratio постоянно и равно q).
  */
+@Tag("fast")
 class GridGeometricTest {
     private val tol = 1e-12
 

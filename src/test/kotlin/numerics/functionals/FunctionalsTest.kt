@@ -3,9 +3,11 @@ package numerics.functionals
 import numerics.GeneratingSystem
 import numerics.Grid
 import numerics.MinimalSplineBasis
+import org.junit.jupiter.api.Tag
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
+@Tag("fast")
 class FunctionalsTest {
     private val grid = Grid.uniform(8)
     private val basis = MinimalSplineBasis(GeneratingSystem.B, grid)

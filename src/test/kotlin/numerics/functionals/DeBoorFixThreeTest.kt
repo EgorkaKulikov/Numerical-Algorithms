@@ -3,6 +3,7 @@ package numerics.functionals
 import numerics.GeneratingSystem
 import numerics.Grid
 import numerics.MinimalSplineBasis
+import org.junit.jupiter.api.Tag
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
@@ -10,6 +11,7 @@ import kotlin.test.assertTrue
  * Тесты трёх функционалов де Бура--Фикса xi^<0>, xi^<1>, xi^<2>
  * Источники формул перечислены в docs/REFERENCES.md, раздел 2.
  */
+@Tag("fast")
 class DeBoorFixThreeTest {
     private val grids = listOf(Grid.uniform(8), Grid.quasiUniform(8))
     private val systems = listOf(GeneratingSystem.B, GeneratingSystem.H, GeneratingSystem.T)

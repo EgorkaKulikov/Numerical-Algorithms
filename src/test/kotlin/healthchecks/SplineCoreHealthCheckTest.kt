@@ -11,6 +11,7 @@ import numerics.functionals.FunctionalFamily
 import numerics.functionals.ProjFunctionals
 import numerics.functionals.ThreePointFunctionals
 import numerics.nonDegenerate
+import org.junit.jupiter.api.Tag
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertTrue
@@ -27,6 +28,7 @@ import kotlin.test.assertTrue
  * Каждая проверка выполняется на двух сетках — равномерной и квазиравномерной, —
  * чтобы отловить ошибки, проявляющиеся только при неравных шагах.
  */
+@Tag("fast")
 class SplineCoreHealthCheckTest {
 
     private companion object {

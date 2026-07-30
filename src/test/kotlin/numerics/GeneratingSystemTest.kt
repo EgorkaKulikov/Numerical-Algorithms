@@ -1,10 +1,12 @@
 package numerics
 
+import org.junit.jupiter.api.Tag
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
+@Tag("fast")
 class GeneratingSystemTest {
     @Test fun wronskianNonZero() {
         for (sys in listOf(GeneratingSystem.B, GeneratingSystem.H, GeneratingSystem.T)) {

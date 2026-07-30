@@ -1,5 +1,6 @@
 package numerics
 
+import org.junit.jupiter.api.Tag
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -11,6 +12,7 @@ import kotlin.test.assertTrue
  * ЛЮБОМ n (локальный параметр квазиравномерности = ratio, НЕ стремится к 1 при росте n,
  * в отличие от geometric); h = max шаг. Проверяются чётное и нечётное n.
  */
+@Tag("fast")
 class GridGradedTest {
     private val tol = 1e-12
 

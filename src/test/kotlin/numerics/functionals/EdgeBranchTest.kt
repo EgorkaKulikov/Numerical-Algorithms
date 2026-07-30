@@ -3,6 +3,7 @@ package numerics.functionals
 import numerics.GeneratingSystem
 import numerics.Grid
 import numerics.MinimalSplineBasis
+import org.junit.jupiter.api.Tag
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -12,6 +13,7 @@ import kotlin.test.assertTrue
  * Точечные тесты на краевые ветви: контракт ValueFunctional, обе ветви maxOf в
  * errorEh (пик ошибки в середине), значения по умолчанию фабрик Grid.
  */
+@Tag("fast")
 class EdgeBranchTest {
     /** ValueFunctional требует совпадения длин nodes и coeffs (ветвь require=false). */
     @Test fun valueFunctionalRejectsSizeMismatch() {

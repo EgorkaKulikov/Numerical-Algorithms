@@ -1,6 +1,7 @@
 package numerics.functionals
 
 import numerics.Grid
+import org.junit.jupiter.api.Tag
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -10,6 +11,7 @@ import kotlin.test.assertTrue
  * Тесты метрик ошибки: errorEh (равномерная норма на мелкой сетке),
  * orders (порядок сходимости log2), constCh (константа E_h/h^p).
  */
+@Tag("fast")
 class MetricsTest {
     /** errorEh: для exact-eval с известной разностью даёт точный максимум модуля. */
     @Test fun errorEhCapturesMaxDifference() {

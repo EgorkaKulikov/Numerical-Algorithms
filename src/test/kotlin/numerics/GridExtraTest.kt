@@ -1,5 +1,6 @@
 package numerics
 
+import org.junit.jupiter.api.Tag
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -9,6 +10,7 @@ import kotlin.test.assertTrue
  * Дополнительные тесты сетки и эталонных формул: quasiUniform, проверка require,
  * вырожденность узлов и все ветви ReferenceSplines (B, B', H) внутри и вне носителя.
  */
+@Tag("fast")
 class GridExtraTest {
     private val tol = 1e-12
 

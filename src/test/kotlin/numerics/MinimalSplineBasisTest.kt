@@ -1,10 +1,12 @@
 package numerics
 
+import org.junit.jupiter.api.Tag
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
+@Tag("fast")
 class MinimalSplineBasisTest {
     private fun basis(sys: GeneratingSystem, n: Int = 8) =
         MinimalSplineBasis(sys, Grid.uniform(n))
