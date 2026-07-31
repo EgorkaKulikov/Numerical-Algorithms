@@ -24,11 +24,17 @@ class MinimalSplineBasis(val sys: GeneratingSystem, val grid: Grid) {
 
     private fun a(j: Int): DoubleArray = aVec[j - aMin]
 
-    private fun computeA(j: Int): DoubleArray {
+    /**
+     * Вектор a_j аппроксимационного соотношения на (x_{j+1}, x_{j+2}), j = -2..n-1.
+     *
+     * `internal`, а не `private`: тот же вектор a^N_j нужен семейству усредняющих
+     * функционалов mu (`AveragingFunctionals`), где раньше жила его дословная копия.
+     */
+    internal fun computeA(j: Int): DoubleArray {
         val xj1 = grid.x(j + 1)
-        val xj2 = grid.x(j + 2)
         val phiJ1 = sys.phi(xj1)
-        if (xj1 == xj2) return phiJ1 // тройной узел на краю
+        if (grid.isCoincident(j + 1)) return phiJ1 // тройной узел на краю: x_{j+1} = x_{j+2}
+        val xj2 = grid.x(j + 2)
         val phiDJ1 = sys.phiD(xj1)
         val dJ2 = cross3(sys.phi(xj2), sys.phiD(xj2))
         // Знаменатель — скалярное произведение, его масштаб задаёт сумма модулей

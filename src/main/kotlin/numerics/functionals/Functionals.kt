@@ -68,7 +68,16 @@ abstract class FunctionalFamily(val basis: MinimalSplineBasis, val name: String)
 // с. 126–143). См. docs/REFERENCES.md, раздел 2.
 // ----------------------------------------------------------------------------
 
-/** Линейная комбинация значений f в точках nodes с коэффициентами coeffs (только значения). */
+/**
+ * Линейная комбинация значений f в точках nodes с коэффициентами coeffs (только значения).
+ *
+ * @property nodes опорные точки. READ-ONLY ПО СОГЛАШЕНИЮ: содержимое нельзя изменять.
+ *   Копия не возвращается сознательно: это ГОРЯЧИЕ данные — оба массива читаются
+ *   в цикле [apply] и в сборке матриц/правых частей всех трёх солверов (десятки
+ *   тысяч обращений за запуск), а сам функционал неизменяем по построению.
+ *   Записей в эти массивы в проекте нет ни одной.
+ * @property coeffs коэффициенты при значениях в [nodes]. READ-ONLY по соглашению.
+ */
 class ValueFunctional(val nodes: DoubleArray, val coeffs: DoubleArray) : ApproxFunctional {
     init { require(nodes.size == coeffs.size) }
     override fun apply(f: (Double) -> Double, fD: (Double) -> Double, fDD: (Double) -> Double): Double {
@@ -173,7 +182,7 @@ class ProjFunctionals(basis: MinimalSplineBasis) : FunctionalFamily(basis, "thet
 
 /**
  * Функционал вида xi(u) = u(node) + cD * u'(node) (де Бура--Фикса r=1).
- * При cD=0 и chаистом значении — краевой u(x_0)/u(x_n).
+ * При cD=0 сводится к чистому значению — краевой функционал u(x_0)/u(x_n).
  */
 class DerivFunctional(val node: Double, val cD: Double) : ApproxFunctional {
     override fun apply(f: (Double) -> Double, fD: (Double) -> Double, fDD: (Double) -> Double): Double =
@@ -444,25 +453,6 @@ class AveragingFunctionals(basis: MinimalSplineBasis, val theta: Double = 0.5) :
         else -> grid.x(j + 1) + theta * (grid.x(j + 2) - grid.x(j + 1))
     }
 
-    /** Вектор a^N_j (аппроксимационного соотношения) — как в MinimalSplineBasis.computeA. */
-    private fun aN(j: Int): DoubleArray {
-        val xj1 = grid.x(j + 1); val xj2 = grid.x(j + 2)
-        val phiJ1 = sys.phi(xj1)
-        if (xj1 == xj2) return phiJ1
-        val phiDJ1 = sys.phiD(xj1)
-        val dJ2 = cross3(sys.phi(xj2), sys.phiD(xj2))
-        // Тот же знаменатель, что в MinimalSplineBasis.computeA: масштаб — сумма модулей
-        // покомпонентных произведений скалярного произведения (denom ~ h).
-        val denom = dot3(dJ2, phiDJ1)
-        val denomScale = dot3Scale(dJ2, phiDJ1)
-        require(isSignificant(denom, denomScale)) {
-            "aN(j=$j): degenerate approximation relation, dot3(dJ2, phiDJ1)=$denom, " +
-                "scale=$denomScale (значимость потеряна: порог $DEGENERACY_RELATIVE_EPS)"
-        }
-        val coef = dot3(dJ2, phiJ1) / denom
-        return doubleArrayOf(phiJ1[0] - coef * phiDJ1[0], phiJ1[1] - coef * phiDJ1[1], phiJ1[2] - coef * phiDJ1[2])
-    }
-
     private fun buildMu(j: Int): ApproxFunctional {
         if (j == -2) return ValueFunctional(doubleArrayOf(grid.x(0)), doubleArrayOf(1.0))
         if (j == n - 1) return ValueFunctional(doubleArrayOf(grid.x(n)), doubleArrayOf(1.0))
@@ -472,7 +462,9 @@ class AveragingFunctionals(basis: MinimalSplineBasis, val theta: Double = 0.5) :
             doubleArrayOf(sys.rho(ym), sys.rho(y0), sys.rho(yp)),
             doubleArrayOf(sys.sigma(ym), sys.sigma(y0), sys.sigma(yp)),
         )
-        val coeff = LinearAlgebra.solve(matrix, aN(j))
+        // Вектор a^N_j аппроксимационного соотношения — тот же самый, по которому строится
+        // базис; ранее здесь жила его дословная копия (`aN`).
+        val coeff = LinearAlgebra.solve(matrix, basis.computeA(j))
         return ValueFunctional(doubleArrayOf(ym, y0, yp), coeff)
     }
 }
