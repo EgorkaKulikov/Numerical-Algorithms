@@ -149,10 +149,14 @@ class ProjFunctionals(basis: MinimalSplineBasis) : FunctionalFamily(basis, "thet
         val b = basis.omega(j, xj1)
         val d = basis.omega(j, xj2)
         val k1 = c * c * d - b * c * e - a * d * e - d * e * e
-        // Защита от вырождения знаменателя: все остальные деления в этом файле и в
-        // MinimalSplineBasis также защищены (единообразие диагностики).
-        check(kotlin.math.abs(k1) >= 1e-14) {
-            "closedFormInternal(j=$j): вырожденный знаменатель K1=$k1 (близок к нулю)"
+        // Защита от вырождения знаменателя: масштабом служит сумма модулей четырёх
+        // слагаемых K1 (значения omega_j пропорциональны 1, но их РАЗНОСТИ малы как
+        // степени h, поэтому абсолютный порог 1e-14 был бы ложным «вырождением» на
+        // мелких сетках и слепым на крупных). См. KDoc numerics.DEGENERACY_RELATIVE_EPS.
+        val k1Scale = cancellationScale(c * c * d, b * c * e, a * d * e, d * e * e)
+        check(isSignificant(k1, k1Scale)) {
+            "closedFormInternal(j=$j): вырожденный знаменатель K1=$k1, scale=$k1Scale " +
+                "(значимость потеряна: порог $DEGENERACY_RELATIVE_EPS)"
         }
         return ValueFunctional(
             doubleArrayOf(xj, mid(xj, xj1), mid(xj1, xj2), mid(xj2, xj3), xj3),
@@ -236,9 +240,14 @@ class DeBoorFixFunctionals(basis: MinimalSplineBasis, val r: Int = 1) :
         val sig1 = sys.sigma(x1); val sig2 = sys.sigma(x2)
         val rhoD1 = sys.rhoD(x1); val rhoD2 = sys.rhoD(x2)
         val sigD1 = sys.sigmaD(x1); val sigD2 = sys.sigmaD(x2)
+        // Вронскиан W_j — разность двух произведений; масштаб = сумма их модулей.
+        // Так проверка не зависит от масштаба самих rho', sigma' (для системы H они
+        // растут как cosh, для T ограничены единицей, а на мелкой сетке разность мала).
         val denom = rhoD2 * sigD1 - rhoD1 * sigD2
-        require(kotlin.math.abs(denom) >= 1e-14) {
-            "buildXi1(j=$j): degenerate Wronskian rhoD2*sigD1 - rhoD1*sigD2=$denom (near-zero denominator)"
+        val denomScale = cancellationScale(rhoD2 * sigD1, rhoD1 * sigD2)
+        require(isSignificant(denom, denomScale)) {
+            "buildXi1(j=$j): degenerate Wronskian rhoD2*sigD1 - rhoD1*sigD2=$denom, " +
+                "scale=$denomScale (значимость потеряна: порог $DEGENERACY_RELATIVE_EPS)"
         }
         val cD = ((sig2 - sig1) * rhoD2 - (rho2 - rho1) * sigD2) / denom
         return DerivFunctional(x1, cD)
@@ -251,9 +260,12 @@ class DeBoorFixFunctionals(basis: MinimalSplineBasis, val r: Int = 1) :
         val sig1 = sys.sigma(x1); val sig2 = sys.sigma(x2)
         val rhoD1 = sys.rhoD(x1); val rhoD2 = sys.rhoD(x2)
         val sigD1 = sys.sigmaD(x1); val sigD2 = sys.sigmaD(x2)
+        // Тот же вронскиан, что и в buildXi1: масштаб — сумма модулей двух произведений.
         val denom = rhoD2 * sigD1 - rhoD1 * sigD2
-        require(kotlin.math.abs(denom) >= 1e-14) {
-            "buildXi2(j=$j): degenerate Wronskian rhoD2*sigD1 - rhoD1*sigD2=$denom (near-zero denominator)"
+        val denomScale = cancellationScale(rhoD2 * sigD1, rhoD1 * sigD2)
+        require(isSignificant(denom, denomScale)) {
+            "buildXi2(j=$j): degenerate Wronskian rhoD2*sigD1 - rhoD1*sigD2=$denom, " +
+                "scale=$denomScale (значимость потеряна: порог $DEGENERACY_RELATIVE_EPS)"
         }
         val cD = ((sig2 - sig1) * rhoD1 - (rho2 - rho1) * sigD1) / denom
         return DerivFunctional(x2, cD)
@@ -274,9 +286,35 @@ class DeBoorFixFunctionals(basis: MinimalSplineBasis, val r: Int = 1) :
         val rj2 = sys.rho(xj2); val sj2 = sys.sigma(xj2)
         val rDj2 = sys.rhoD(xj2); val sDj2 = sys.sigmaD(xj2)
 
-        val delta = (rDj1 * sDj2 - rDj2 * sDj1) * (rDj * sDDj - rDDj * sDj)
-        require(kotlin.math.abs(delta) >= 1e-14) {
-            "buildXi0(j=$j): degenerate denominator Delta_j=$delta (near-zero)"
+        // Delta_j — ПРОИЗВЕДЕНИЕ двух миноров 2x2, и вырождается оно ровно тогда, когда
+        // вырожден один из множителей. Поэтому проверяются множители по отдельности,
+        // каждый на своём масштабе: так диагностика указывает на конкретную причину,
+        // а критерий не зависит от произведения масштабов (иначе два умеренно малых
+        // множителя дали бы ложное «вырождение»).
+        val wronskian12 = rDj1 * sDj2 - rDj2 * sDj1
+        val wronskian12Scale = cancellationScale(rDj1 * sDj2, rDj2 * sDj1)
+        require(isSignificant(wronskian12, wronskian12Scale)) {
+            "buildXi0(j=$j): degenerate Wronskian W_j=$wronskian12, scale=$wronskian12Scale " +
+                "(значимость потеряна: порог $DEGENERACY_RELATIVE_EPS)"
+        }
+        val curvature = rDj * sDDj - rDDj * sDj
+        val curvatureScale = cancellationScale(rDj * sDDj, rDDj * sDj)
+        require(isSignificant(curvature, curvatureScale)) {
+            "buildXi0(j=$j): degenerate rho'sigma''-rho''sigma'=$curvature, scale=$curvatureScale " +
+                "(значимость потеряна: порог $DEGENERACY_RELATIVE_EPS)"
+        }
+        val delta = wronskian12 * curvature
+        // Проверки выше контролируют МНОЖИТЕЛИ, но не само произведение: два значимых,
+        // но крошечных множителя (порядка 1e-200 каждый) дают delta == 0.0 из-за underflow,
+        // а два огромных — Inf из-за overflow; в обоих случаях n1/delta ушло бы наружу
+        // молча как Inf/NaN. Отбраковываем здесь, указывая оба множителя.
+        // `require`, а не `check`, — для однотипности с проверками множителей выше:
+        // вызывающий, трактующий IllegalArgumentException как «плохой вход», не должен
+        // пропустить этот случай из-за другого типа исключения.
+        require(delta.isFinite() && delta != 0.0) {
+            "buildXi0(j=$j): Delta_j=$delta непригодна как знаменатель (underflow/overflow произведения " +
+                "значимых по отдельности множителей): W_j=$wronskian12, " +
+                "rho'sigma''-rho''sigma'=$curvature"
         }
         val n1 = (rj1 * sDj1 - rDj1 * sj1) * (rDDj * sDj2 - rDj2 * sDDj) +
             (rDj1 * sDj2 - rDj2 * sDj1) * (rDDj * sj - rj * sDDj) +
@@ -284,7 +322,16 @@ class DeBoorFixFunctionals(basis: MinimalSplineBasis, val r: Int = 1) :
         val n2 = (rj1 * sDj1 - rDj1 * sj1) * (rDj2 * sDj - rDj * sDj2) +
             (rDj1 * sDj2 - rDj2 * sDj1) * (rj * sDj - rDj * sj) +
             (rj2 * sDj2 - rDj2 * sj2) * (rDj * sDj1 - rDj1 * sDj)
-        return SecondDerivFunctional(xj, n1 / delta, n2 / delta)
+        // Конечности знаменателя НЕДОСТАТОЧНО: при субнормальном ненулевом delta
+        // (порядка 1e-310) частные n1/delta, n2/delta всё равно переполняются в Inf
+        // и ушли бы наружу молча. Поэтому проверяется САМ результат.
+        val c1 = n1 / delta
+        val c2 = n2 / delta
+        require(c1.isFinite() && c2.isFinite()) {
+            "buildXi0(j=$j): коэффициенты нечисловые: N1/Delta=$c1, N2/Delta=$c2 " +
+                "(N1=$n1, N2=$n2, Delta_j=$delta — переполнение при делении на субнормальный знаменатель)"
+        }
+        return SecondDerivFunctional(xj, c1, c2)
     }
 }
 
@@ -340,9 +387,15 @@ class DiscreteDeBoorFixFunctionals(basis: MinimalSplineBasis, val r: Int = 1) :
             2 -> Triple(grid.x(j + 2), grid.x(j + 1), grid.x(j + 3))
             else -> Triple(grid.x(j + 1), grid.x(j), grid.x(j + 2))
         }
+        // Шаг разделённой разности — разность координат узлов; масштаб = |right|+|left|.
+        // Для отрезка, удалённого от нуля, это единственный корректный масштаб: сама
+        // разность мала как h, а абсолютный порог 1e-14 не отличал бы мелкую сетку от
+        // совпавших узлов. См. KDoc numerics.DEGENERACY_RELATIVE_EPS.
         val denom = right - left
-        require(kotlin.math.abs(denom) >= 1e-14) {
-            "buildXiTilde(j=$j,r=$r): degenerate divided-difference span x=$right - x=$left = $denom"
+        val denomScale = cancellationScale(right, left)
+        require(isSignificant(denom, denomScale)) {
+            "buildXiTilde(j=$j,r=$r): degenerate divided-difference span x=$right - x=$left = $denom, " +
+                "scale=$denomScale (значимость потеряна: порог $DEGENERACY_RELATIVE_EPS)"
         }
         // f(node) + w (f(right) - f(left))/denom как комбинация значений.
         return ValueFunctional(
@@ -398,9 +451,13 @@ class AveragingFunctionals(basis: MinimalSplineBasis, val theta: Double = 0.5) :
         if (xj1 == xj2) return phiJ1
         val phiDJ1 = sys.phiD(xj1)
         val dJ2 = cross3(sys.phi(xj2), sys.phiD(xj2))
+        // Тот же знаменатель, что в MinimalSplineBasis.computeA: масштаб — сумма модулей
+        // покомпонентных произведений скалярного произведения (denom ~ h).
         val denom = dot3(dJ2, phiDJ1)
-        require(kotlin.math.abs(denom) >= 1e-14) {
-            "aN(j=$j): degenerate approximation relation, dot3(dJ2, phiDJ1)=$denom (near-zero denominator)"
+        val denomScale = dot3Scale(dJ2, phiDJ1)
+        require(isSignificant(denom, denomScale)) {
+            "aN(j=$j): degenerate approximation relation, dot3(dJ2, phiDJ1)=$denom, " +
+                "scale=$denomScale (значимость потеряна: порог $DEGENERACY_RELATIVE_EPS)"
         }
         val coef = dot3(dJ2, phiJ1) / denom
         return doubleArrayOf(phiJ1[0] - coef * phiDJ1[0], phiJ1[1] - coef * phiDJ1[1], phiJ1[2] - coef * phiDJ1[2])

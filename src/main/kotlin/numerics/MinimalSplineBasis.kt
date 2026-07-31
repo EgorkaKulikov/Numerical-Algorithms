@@ -31,9 +31,14 @@ class MinimalSplineBasis(val sys: GeneratingSystem, val grid: Grid) {
         if (xj1 == xj2) return phiJ1 // тройной узел на краю
         val phiDJ1 = sys.phiD(xj1)
         val dJ2 = cross3(sys.phi(xj2), sys.phiD(xj2))
+        // Знаменатель — скалярное произведение, его масштаб задаёт сумма модулей
+        // покомпонентных произведений (величина до взаимных сокращений). Абсолютный
+        // порог здесь неприменим: denom ~ h, то есть зависит от масштаба отрезка.
         val denom = dot3(dJ2, phiDJ1)
-        require(kotlin.math.abs(denom) >= 1e-14) {
-            "computeA(j=$j): degenerate approximation relation, dot3(dJ2, phiDJ1)=$denom (near-zero denominator)"
+        val denomScale = dot3Scale(dJ2, phiDJ1)
+        require(isSignificant(denom, denomScale)) {
+            "computeA(j=$j): degenerate approximation relation, dot3(dJ2, phiDJ1)=$denom, " +
+                "scale=$denomScale (значимость потеряна: порог $DEGENERACY_RELATIVE_EPS)"
         }
         val coef = dot3(dJ2, phiJ1) / denom
         return doubleArrayOf(

@@ -72,11 +72,19 @@ fun det3(a: DoubleArray, b: DoubleArray, c: DoubleArray): Double = dot3(a, cross
 /**
  * Обращение матрицы 3x3 со столбцами c0, c1, c2 (строки M^{-1} = (c1 x c2,
  * c2 x c0, c0 x c1)/det). Используется для M_k^{-1} при устойчивом построении omega_j.
+ *
+ * Вырожденность проверяется ОТНОСИТЕЛЬНО масштаба самого определителя
+ * ([det3Scale] — сумма модулей шести слагаемых формулы Лейбница), а не по
+ * абсолютному порогу: `det(M_k) ~ h^3`, поэтому абсолютный порог был ложным
+ * «singular» на мелких сетках и пропускал шум на крупных. Обоснование значения
+ * порога — в KDoc [DEGENERACY_RELATIVE_EPS].
  */
 fun invert3(c0: DoubleArray, c1: DoubleArray, c2: DoubleArray): Array<DoubleArray> {
     val det = det3(c0, c1, c2)
-    require(kotlin.math.abs(det) >= 1e-14) {
-        "invert3: matrix is singular or near-singular, det=$det"
+    val scale = det3Scale(c0, c1, c2)
+    require(isSignificant(det, scale)) {
+        "invert3: matrix is singular or near-singular, det=$det, scale=$scale, " +
+            "det/scale=${det / scale} < $DEGENERACY_RELATIVE_EPS"
     }
     val r0 = cross3(c1, c2)
     val r1 = cross3(c2, c0)
