@@ -39,7 +39,23 @@ fun ApproxFunctional.apply(f: (Double) -> Double): Double = apply(f, { 0.0 }, { 
  *           редукция Кулкарни (L7) применима. false для квазиинтерполянтов (mu, lambda).
  * @property usesDerivative true для xi (работа в C^1).
  */
-abstract class FunctionalFamily(val basis: MinimalSplineBasis, val name: String) {
+abstract class FunctionalFamily(
+    val basis: MinimalSplineBasis,
+    val name: String,
+    /**
+     * Контекст численных вычислений: семейства theta/mu/lambda решают в конструкторе
+     * крошечные СЛАУ (3x3 и 5x5) и обязаны делать это ТЕМ ЖЕ бэкендом, что и решатель.
+     * Это требование ПРОВЕРЯЕТСЯ: решатели сверяют `funcs.ctx` со своим контекстом
+     * через [NumericsContext.requireSame] и падают громко при расхождении.
+     * Значение по умолчанию оставляет 148 существующих точек создания нетронутыми.
+     *
+     * Принимают его ВСЕ семейства, включая те, что линейной алгеброй не пользуются
+     * (`xi`, `xitilde`): иначе они всегда несли бы дефолтный контекст и сверка выше
+     * отвергала бы ЛЮБОЙ решатель с недефолтным контекстом на этих семействах —
+     * то есть асимметрия превратилась бы из косметической в функциональный дефект.
+     */
+    val ctx: NumericsContext = NumericsContext.default(),
+) {
     val grid = basis.grid
     val n = grid.n
     abstract val isProjector: Boolean
@@ -100,7 +116,10 @@ class ValueFunctional(val nodes: DoubleArray, val coeffs: DoubleArray) : ApproxF
  * Кулкарни. Краевые функционалы (j = -2 и j = n-1) — чистые значения f(x_0) и f(x_n);
  * это не допущение реализации, а часть определения в источнике.
  */
-class ProjFunctionals(basis: MinimalSplineBasis) : FunctionalFamily(basis, "theta") {
+class ProjFunctionals(
+    basis: MinimalSplineBasis,
+    ctx: NumericsContext = NumericsContext.default(),
+) : FunctionalFamily(basis, "theta", ctx) {
     override val isProjector = true
     override val usesDerivative = false
     private val funcs: Array<ApproxFunctional> = Array(n + 2) { buildTheta(it - 2) }
@@ -132,7 +151,7 @@ class ProjFunctionals(basis: MinimalSplineBasis) : FunctionalFamily(basis, "thet
         val m = points.size
         val matrix = Array(m) { r -> DoubleArray(m) { c -> basis.omega(indices[r], points[c]) } }
         val rhs = DoubleArray(m) { if (indices[it] == j) 1.0 else 0.0 }
-        val coeff = LinearAlgebra.solve(matrix, rhs)
+        val coeff = LinearAlgebra.solve(matrix, rhs, ctx.backend)
         return ValueFunctional(points, coeff)
     }
 
@@ -222,8 +241,11 @@ class SecondDerivFunctional(val node: Double, val c1: Double, val c2: Double) : 
  * случай для xi явно не выписан. Допущение закрыто эмпирически — тестом
  * биортогональности, включающим краевые индексы для всех r и всех базисов.
  */
-class DeBoorFixFunctionals(basis: MinimalSplineBasis, val r: Int = 1) :
-    FunctionalFamily(basis, if (r == 1) "xi" else "xi<$r>") {
+class DeBoorFixFunctionals(
+    basis: MinimalSplineBasis,
+    val r: Int = 1,
+    ctx: NumericsContext = NumericsContext.default(),
+) : FunctionalFamily(basis, if (r == 1) "xi" else "xi<$r>", ctx) {
     init { require(r in 0..2) { "DeBoorFix: r must be in {0,1,2}, got $r" } }
     override val isProjector = true
     override val usesDerivative = true
@@ -377,12 +399,17 @@ class DeBoorFixFunctionals(basis: MinimalSplineBasis, val r: Int = 1) :
  * конце носителя, где сам сплайн и его первая производная обращаются в ноль, и замена
  * второй производной разностью не воспроизводит порождающую систему даже при h → 0.
  */
-class DiscreteDeBoorFixFunctionals(basis: MinimalSplineBasis, val r: Int = 1) :
-    FunctionalFamily(basis, if (r == 1) "xitilde" else "xitilde<$r>") {
+class DiscreteDeBoorFixFunctionals(
+    basis: MinimalSplineBasis,
+    val r: Int = 1,
+    ctx: NumericsContext = NumericsContext.default(),
+) : FunctionalFamily(basis, if (r == 1) "xitilde" else "xitilde<$r>", ctx) {
     init { require(r in 1..2) { "DiscreteDeBoorFix: r must be in {1,2}, got $r" } }
     override val isProjector = false
     override val usesDerivative = false
-    private val raw = DeBoorFixFunctionals(basis, r)
+    // Контекст пробрасывается во вложенное семейство: иначе `raw.ctx` молча
+    // оставался бы дефолтным и расходился с контекстом обёртки.
+    private val raw = DeBoorFixFunctionals(basis, r, ctx)
     private val funcs: Array<ApproxFunctional> = Array(n + 2) { buildXiTilde(it - 2) }
     override fun chi(j: Int): ApproxFunctional = funcs[j + 2]
 
@@ -438,8 +465,11 @@ class DiscreteDeBoorFixFunctionals(basis: MinimalSplineBasis, val r: Int = 1) :
  *
  * @param theta параметр размещения узлов вспомогательной сетки в (0, 1)
  */
-class AveragingFunctionals(basis: MinimalSplineBasis, val theta: Double = 0.5) :
-    FunctionalFamily(basis, "mu") {
+class AveragingFunctionals(
+    basis: MinimalSplineBasis,
+    val theta: Double = 0.5,
+    ctx: NumericsContext = NumericsContext.default(),
+) : FunctionalFamily(basis, "mu", ctx) {
     override val isProjector = false
     override val usesDerivative = false
     private val sys = basis.sys
@@ -464,7 +494,7 @@ class AveragingFunctionals(basis: MinimalSplineBasis, val theta: Double = 0.5) :
         )
         // Вектор a^N_j аппроксимационного соотношения — тот же самый, по которому строится
         // базис; ранее здесь жила его дословная копия (`aN`).
-        val coeff = LinearAlgebra.solve(matrix, basis.computeA(j))
+        val coeff = LinearAlgebra.solve(matrix, basis.computeA(j), ctx.backend)
         return ValueFunctional(doubleArrayOf(ym, y0, yp), coeff)
     }
 }
@@ -490,8 +520,11 @@ class AveragingFunctionals(basis: MinimalSplineBasis, val theta: Double = 0.5) :
  *
  * @param thetaHat параметр размещения средней точки в (0, 1); значение 1/2 — выбор реализации
  */
-class ThreePointFunctionals(basis: MinimalSplineBasis, val thetaHat: Double = 0.5) :
-    FunctionalFamily(basis, "lambda") {
+class ThreePointFunctionals(
+    basis: MinimalSplineBasis,
+    val thetaHat: Double = 0.5,
+    ctx: NumericsContext = NumericsContext.default(),
+) : FunctionalFamily(basis, "lambda", ctx) {
     override val isProjector = false
     override val usesDerivative = false
     private val funcs: Array<ApproxFunctional> = Array(n + 2) { buildLambda(it - 2) }
@@ -509,7 +542,7 @@ class ThreePointFunctionals(basis: MinimalSplineBasis, val thetaHat: Double = 0.
         // coeffs_p = (M^{-1})[1][p]: решаем M^T r = e_1 (строка 1 обратной).
         val mTrans = Array(3) { i -> DoubleArray(3) { p -> mt[p][i] } }
         val e1 = doubleArrayOf(0.0, 1.0, 0.0)
-        val coeff = LinearAlgebra.solve(mTrans, e1)
+        val coeff = LinearAlgebra.solve(mTrans, e1, ctx.backend)
         return ValueFunctional(points, coeff)
     }
 }
