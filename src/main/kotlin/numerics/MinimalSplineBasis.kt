@@ -54,8 +54,44 @@ class MinimalSplineBasis(val sys: GeneratingSystem, val grid: Grid) {
         )
     }
 
-    /** Индекс сеточного интервала k с x_k <= t < x_{k+1} (для t=b возвращает n-1). */
+    /**
+     * Индекс сеточного интервала k с x_k <= t < x_{k+1} (для t=b возвращает n-1).
+     *
+     * ЕДИНСТВЕННАЯ ТОЧКА ПРОВЕРКИ ПРИНАДЛЕЖНОСТИ ОТРЕЗКУ для всего класса. Метод
+     * `private`, но через него проходят ВСЕ пути, где выход за `[a,b]` вообще возможен:
+     * [interval], [evalSpline], [evalSplineDeriv], [evalSplineDeriv2]. Семейство
+     * `omega*` сюда с внешней точкой не попадает ПО ПОСТРОЕНИЮ: их предваряет отсечка
+     * по носителю `x_j <= t <= x_{j+3}`, а носитель ЛЮБОГО базисного сплайна лежит
+     * внутри отрезка — при j = -2 это `[x_{-2}, x_1] = [a, x_1]`, при j = n-1 это
+     * `[x_{n-1}, x_{n+2}] = [x_{n-1}, b]` (краевые узлы трёхкратны). Поэтому проверка
+     * здесь эквивалентна проверке в каждой публичной точке входа, но записана один раз.
+     *
+     * ЧТО БЫЛО РАНЬШЕ. Оба граничных условия ниже КЛАМПОВАЛИ внешнюю точку: `t < a`
+     * давало интервал 0, `t > b` — интервал n-1. Формально это молчаливая ЭКСТРАПОЛЯЦИЯ:
+     * [evalSpline] честно считал многочлен крайнего слоя в точке, где сплайн не
+     * определён, и возвращал правдоподобное число вместо признака плохого входа.
+     *
+     * @throws IllegalArgumentException если t лежит строго вне [Grid.a], [Grid.b].
+     */
     private fun intervalOf(t: Double): Int {
+        // Условие записано ОТРИЦАНИЯМИ, а не как `t in grid.a..grid.b`, и это не стиль.
+        // При t = NaN оба сравнения `<` и `>` ложны, поэтому оба отрицания истинны и NaN
+        // проходит НАСКВОЗЬ — ровно как раньше (бинарный поиск ниже вернёт 1, phi(NaN)
+        // даст NaN, и NaN распространится в результат). Это ТРЕБОВАНИЕ, а не побочный
+        // эффект: `VolterraOperator.apply` сознательно пропускает NaN, чтобы плохой вход
+        // проявился как NaN, а не как правдоподобное число (см.
+        // `VolterraIntegrandCacheEquivalenceTest.nanArgument_bothPathsAgree`). Вариант
+        // `t in grid.a..grid.b` на NaN дал бы false и превратил бы NaN в исключение,
+        // сломав это соглашение.
+        require(!(t < grid.a) && !(t > grid.b)) {
+            val side = if (t < grid.a) "левее a на ${grid.a - t}" else "правее b на ${t - grid.b}"
+            "MinimalSplineBasis: точка t=$t вне отрезка сетки [${grid.a}, ${grid.b}] ($side). " +
+                "Сплайн определён ТОЛЬКО на отрезке сетки: вне его значение не задано ни " +
+                "аппроксимационным соотношением, ни носителями базиса. Прежнее поведение " +
+                "МОЛЧА экстраполировало многочлен крайнего слоя и возвращало правдоподобное " +
+                "число; теперь такой вызов — ошибка. Если точка получена шаблоном конечной " +
+                "разности или квадратурой по [a,t] при t>b, ограничьте аргумент отрезком явно."
+        }
         // Бинарный поиск (breakpoints x_0..x_n возрастают): наибольший k in [0,n-1]
         // с x_k <= t, с клампами на концах. Семантика идентична линейному поиску:
         // t < x_1 -> 0; t >= x_{n-1} -> n-1; иначе x_lo <= t < x_{lo+1}.
@@ -70,7 +106,11 @@ class MinimalSplineBasis(val sys: GeneratingSystem, val grid: Grid) {
         return lo
     }
 
-    /** Индекс сеточного интервала, содержащего t (публичный доступ). */
+    /**
+     * Индекс сеточного интервала, содержащего t (публичный доступ).
+     *
+     * @throws IllegalArgumentException если t строго вне отрезка сетки (см. [intervalOf]).
+     */
     fun interval(t: Double): Int = intervalOf(t)
 
     /** Три активных значения omega_{k-2},omega_{k-1},omega_k в точке t (одно M_k^{-1} phi(t)). */
@@ -121,14 +161,23 @@ class MinimalSplineBasis(val sys: GeneratingSystem, val grid: Grid) {
         return inv[slot][0] * phiDDT[0] + inv[slot][1] * phiDDT[1] + inv[slot][2] * phiDDT[2]
     }
 
-    /** Значение сплайна u_h(t) = sum_j c_j omega_j(t), c размера n+2. */
+    /**
+     * Значение сплайна u_h(t) = sum_j c_j omega_j(t), c размера n+2.
+     *
+     * @throws IllegalArgumentException если t строго вне отрезка сетки (см. [intervalOf]):
+     *   вне отрезка сплайн не определён, а прежнее поведение молча экстраполировало.
+     */
     fun evalSpline(c: DoubleArray, t: Double): Double {
         val k = intervalOf(t)
         val w = activeOmega(k, t)
         return c[k] * w[0] + c[k + 1] * w[1] + c[k + 2] * w[2] // индексы k-2,k-1,k -> +2
     }
 
-    /** Значение производной сплайна u_h'(t). */
+    /**
+     * Значение производной сплайна u_h'(t).
+     *
+     * @throws IllegalArgumentException если t строго вне отрезка сетки (см. [intervalOf]).
+     */
     fun evalSplineDeriv(c: DoubleArray, t: Double): Double {
         val k = intervalOf(t)
         val inv = invM[k]
@@ -139,7 +188,11 @@ class MinimalSplineBasis(val sys: GeneratingSystem, val grid: Grid) {
         return c[k] * w0 + c[k + 1] * w1 + c[k + 2] * w2
     }
 
-    /** Значение второй производной сплайна u_h''(t) (для xi^{<0>}-идемпотентности). */
+    /**
+     * Значение второй производной сплайна u_h''(t) (для xi^{<0>}-идемпотентности).
+     *
+     * @throws IllegalArgumentException если t строго вне отрезка сетки (см. [intervalOf]).
+     */
     fun evalSplineDeriv2(c: DoubleArray, t: Double): Double {
         val k = intervalOf(t)
         val inv = invM[k]

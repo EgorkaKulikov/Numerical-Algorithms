@@ -5,6 +5,7 @@ import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlin.test.fail
 
 /**
  * Дополнительные тесты базиса минимальных сплайнов: interval/activeOmega,
@@ -98,8 +99,13 @@ class MinimalSplineBasisExtraTest {
 
     /**
      * Регресс #4: бинарный поиск интервала даёт тот же результат, что наивный
-     * линейный, во ВСЕХ представительных точках (внутри интервалов, на внутренних
-     * узлах, левый/правый концы, точки чуть за границами).
+     * линейный, во ВСЕХ ТОЧКАХ ОТРЕЗКА (внутри интервалов, на внутренних узлах,
+     * левый/правый концы).
+     *
+     * Точки ВНЕ отрезка из этого набора УБРАНЫ сознательно: эталонный линейный
+     * поиск воспроизводит СТАРОЕ поведение — кламп — а кламп больше НЕ является
+     * контрактом. Новый контракт на тех же точках проверяет [outsideSegmentIsRejected]:
+     * покрытие не потеряно, перенесено туда, где утверждение верно.
      */
     @Test fun intervalBinarySearchMatchesLinear() {
         val g = Grid.uniform(5)
@@ -113,14 +119,136 @@ class MinimalSplineBasisExtraTest {
         val pts = mutableListOf<Double>()
         pts.add(g.a)                     // левый конец
         pts.add(g.b)                     // правый конец
-        pts.add(g.a - 0.1)               // чуть за левой границей
-        pts.add(g.b + 0.1)               // чуть за правой границей
         for (i in 0..g.n) {
             pts.add(g.x(i))              // ровно на узле (в т.ч. внутренние)
             if (i < g.n) pts.add(0.5 * (g.x(i) + g.x(i + 1))) // середина интервала
         }
         for (t in pts) {
             assertEquals(linear(t), basis.interval(t), "interval mismatch at t=$t")
+        }
+    }
+
+    /**
+     * Точка ВНЕ отрезка ОТВЕРГАЕТСЯ, а не клампуется молча (пункт 8.3).
+     *
+     * До правки `intervalOf` возвращал первый интервал при `t < a` и последний при
+     * `t > b`, а [MinimalSplineBasis.evalSpline] честно считал многочлен крайнего слоя в
+     * точке, где сплайн не определён, и возвращал правдоподобное число — то есть
+     * молча ЭКСТРАПОЛИРОВАЛ. Проверяются ВСЕ четыре публичные точки входа, а не
+     * одна: проверка стоит в общем `intervalOf`, и тест фиксирует, что через него
+     * действительно проходят все четыре (иначе одна из них могла бы тихо уйти
+     * в обход при будущей правке).
+     */
+    @Test fun outsideSegmentIsRejected() {
+        val g = Grid.uniform(5)
+        val basis = MinimalSplineBasis(GeneratingSystem.B, g)
+        val c = DoubleArray(g.n + 2) { 1.0 }
+        val outside = listOf(
+            g.a - 0.1 to "левее a на 0.1",
+            g.b + 0.1 to "правее b на 0.1",
+            Math.nextAfter(g.a, Double.NEGATIVE_INFINITY) to "nextDown(a) — один ulp левее a",
+            Math.nextAfter(g.b, Double.POSITIVE_INFINITY) to "nextUp(b) — один ulp правее b",
+        )
+        val entryPoints: List<Pair<String, (Double) -> Any>> = listOf(
+            "interval" to { t -> basis.interval(t) },
+            "evalSpline" to { t -> basis.evalSpline(c, t) },
+            "evalSplineDeriv" to { t -> basis.evalSplineDeriv(c, t) },
+            "evalSplineDeriv2" to { t -> basis.evalSplineDeriv2(c, t) },
+        )
+        for ((t, where) in outside) {
+            for ((name, call) in entryPoints) {
+                val error = try {
+                    val value = call(t)
+                    fail(
+                        "$name(t=$t) ($where, отрезок [${g.a}, ${g.b}]) обязан был бросить " +
+                            "IllegalArgumentException, но тихо вернул $value — то есть молчаливая " +
+                            "экстраполяция вернулась",
+                    )
+                } catch (e: IllegalArgumentException) {
+                    e
+                }
+                val message = error.message ?: ""
+                // Сообщение обязано быть ДИАГНОСТИЧНЫМ: называть точку, обе границы
+                // и объяснять, что вне отрезка сплайн не определён, — иначе исключение
+                // лишь меняет один непонятный исход на другой.
+                for (fragment in listOf("MinimalSplineBasis", "$t", "${g.a}", "${g.b}", "экстрапол")) {
+                    assertTrue(
+                        message.contains(fragment),
+                        "Сообщение об ошибке $name невнятное: нет фрагмента \"$fragment\". " +
+                            "Получено: \"$message\"",
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * `t = NaN` НЕ бросает: проверка принадлежности записана отрицаниями.
+     *
+     * Это КРИТЕРИЙ ПРАВИЛЬНОСТИ ФОРМУЛИРОВКИ условия, а не прихоть. Проект
+     * сознательно пропускает NaN насквозь (см. `VolterraOperator.apply` и
+     * `VolterraIntegrandCacheEquivalenceTest.nanArgument_bothPathsAgree`): плохой вход
+     * обязан проявиться как NaN, а не как правдоподобное число. Запись проверки
+     * как `require(t in a..b)` превратила бы NaN в исключение и сломала это соглашение.
+     */
+    @Test fun nanArgumentPassesThroughWithoutThrowing() {
+        val g = Grid.uniform(5)
+        val c = DoubleArray(g.n + 2) { 1.0 }
+        for (system in listOf(GeneratingSystem.B, GeneratingSystem.H, GeneratingSystem.T)) {
+            val basis = MinimalSplineBasis(system, g)
+            // ГЛАВНОЕ УТВЕРЖДЕНИЕ: ни одна из точек входа НЕ бросает на NaN.
+            // Именно это сломала бы запись `require(t in a..b)`.
+            val k = basis.interval(Double.NaN)
+            assertTrue(k in 0 until g.n, "${system.name}: interval(NaN) вернул $k вне [0, ${g.n - 1}]")
+            val value = basis.evalSpline(c, Double.NaN)
+            val deriv = basis.evalSplineDeriv(c, Double.NaN)
+            val deriv2 = basis.evalSplineDeriv2(c, Double.NaN)
+
+            // ГДЕ phi ЗАВИСИТ ОТ t, NaN обязан РАСПРОСТРАНИТЬСЯ в результат.
+            // Значение и первая производная таковы у всех трёх систем.
+            assertTrue(value.isNaN(), "${system.name}: evalSpline(NaN) обязан дать NaN, получено $value")
+            assertTrue(deriv.isNaN(), "${system.name}: evalSplineDeriv(NaN) обязан дать NaN, получено $deriv")
+
+            // Вторая производная — ОСОБЫЙ СЛУЧАЙ и НЕ дефект. Для полиномиальной
+            // phi^B = (1, t, t^2) вторая производная phi'' = (0, 0, 2) КОНСТАНТНА: аргумент
+            // в вычисление не входит вовсе, поэтому результат конечен при ЛЮБОМ t,
+            // включая NaN. У H (sinh/cosh) и T (sin/cos) phi'' от t зависит, и NaN проходит.
+            if (system.name == "B") {
+                assertTrue(
+                    deriv2.isFinite(),
+                    "B: phi''=(0,0,2) константна, поэтому evalSplineDeriv2(NaN) обязан быть " +
+                        "конечным (аргумент не участвует в вычислении), получено $deriv2",
+                )
+            } else {
+                assertTrue(
+                    deriv2.isNaN(),
+                    "${system.name}: phi'' зависит от t, поэтому evalSplineDeriv2(NaN) обязан дать " +
+                        "NaN, получено $deriv2",
+                )
+            }
+        }
+    }
+
+    /**
+     * Семейство `omega*` на точках вне отрезка НЕ бросает, а возвращает 0.
+     *
+     * Обоснование размещения проверки в `intervalOf`: семейство `omega*` туда с внешней
+     * точкой НЕ ПОПАДАЕТ — его предваряет отсечка по носителю, а носитель любого
+     * базисного сплайна лежит внутри отрезка. Проверяются именно КРАЙНИЕ j, где
+     * носитель упирается в границу (j = -2 в `a`, j = n-1 в `b`), — если бы рассуждение
+     * было неверно, сломалось бы именно здесь. Это также защищает штатный путь
+     * `VolterraSolver.matrixM`, где `omega_j` интегрируется квадратурой.
+     */
+    @Test fun omegaFamilyOutsideSegmentReturnsZeroWithoutThrowing() {
+        val g = Grid.uniform(5)
+        val basis = MinimalSplineBasis(GeneratingSystem.B, g)
+        val outside = listOf(g.a - 0.1, g.b + 0.1, g.a - 1e-12, g.b + 1e-12)
+        for (j in -2 until g.n) {
+            for (t in outside) {
+                assertEquals(0.0, basis.omega(j, t), 0.0, "omega($j, $t) вне отрезка обязана быть 0")
+                assertEquals(0.0, basis.omegaDeriv(j, t), 0.0, "omegaDeriv($j, $t) вне отрезка обязана быть 0")
+                assertEquals(0.0, basis.omegaDeriv2(j, t), 0.0, "omegaDeriv2($j, $t) вне отрезка обязана быть 0")
+            }
         }
     }
 }
