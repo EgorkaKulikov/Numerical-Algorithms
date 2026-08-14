@@ -247,11 +247,30 @@ class SplineCoreHealthCheckTest {
      *
      * Это минимальное требование к аппроксимационному оператору; его нарушение
      * означает ошибку в построении коэффициентов функционалов.
+     *
+     * ПРОВЕРЯЕТСЯ ВЕСЬ SPAN, А НЕ ОДНА ЕГО КОМПОНЕНТА. Ранее тест брал только `rho`,
+     * тогда как его утверждение — про `span{1, rho, sigma}` целиком. Разрыв был не
+     * косметическим: точность на `sigma` (то есть на `t^2`, `cosh`, `cos`) для семейств
+     * theta, mu и lambda не проверялась НИГДЕ, а точность mu/lambda на системах H и T
+     * держалась на единственной проверке `FunctionalsExtraTest.averagingExactOnSpanH`
+     * (один `sinh`, одна сетка, три точки). Теперь перебираются все три образующие
+     * плюс их линейная комбинация: последняя ловит ошибки, которые сокращаются на
+     * отдельных образующих, но не на общем элементе пространства.
+     *
+     * Коэффициенты комбинации псевдослучайны с ФИКСИРОВАННЫМ зерном — тест обязан
+     * быть воспроизводимым (то же соглашение, что в [projectorsAreIdempotentOnSplines]).
+     *
+     * Производные передаются до второго порядка: семейство xi при `r = 0` использует
+     * `fDD`, и без третьего аргумента оно молча получило бы нулевую вторую производную.
+     * Сейчас в списке стоит `r = 1` по умолчанию, но добавление `r = 0` не должно
+     * превращать проверку в ложно-зелёную.
      */
     @Test
     fun allFamiliesAreExactOnGeneratingSpan() {
-        val deviation = worstOverGrids { grid ->
-            var worst = 0.0
+        val random = kotlin.random.Random(seed = 20240117)
+        var deviation = 0.0
+        var worstLabel = ""
+        for ((gridName, grid) in listOf("uniform" to uniformGrid, "quasiUniform" to quasiUniformGrid)) {
             for (system in allSystems) {
                 val basis = MinimalSplineBasis(system, grid)
                 val families: List<FunctionalFamily> = listOf(
@@ -260,21 +279,53 @@ class SplineCoreHealthCheckTest {
                     AveragingFunctionals(basis),
                     ThreePointFunctionals(basis),
                 )
+                val c0 = random.nextDouble(-1.0, 1.0)
+                val c1 = random.nextDouble(-1.0, 1.0)
+                val c2 = random.nextDouble(-1.0, 1.0)
+                val members = listOf(
+                    SpanMember("1", { 1.0 }, { 0.0 }, { 0.0 }),
+                    SpanMember("rho", system.rho, system.rhoD, system.rhoDD),
+                    SpanMember("sigma", system.sigma, system.sigmaD, system.sigmaDD),
+                    SpanMember(
+                        "combination",
+                        { t -> c0 + c1 * system.rho(t) + c2 * system.sigma(t) },
+                        { t -> c1 * system.rhoD(t) + c2 * system.sigmaD(t) },
+                        { t -> c1 * system.rhoDD(t) + c2 * system.sigmaDD(t) },
+                    ),
+                )
                 for (funcs in families) {
-                    val projected = funcs.projectorCoeffs({ t -> system.rho(t) }, { t -> system.rhoD(t) })
-                    for (t in samplePoints(grid)) {
-                        worst = maxOf(worst, abs(system.rho(t) - basis.evalSpline(projected, t)))
+                    for (member in members) {
+                        val projected = funcs.projectorCoeffs(member.g, member.gD, member.gDD)
+                        for (t in samplePoints(grid)) {
+                            val error = abs(member.g(t) - basis.evalSpline(projected, t))
+                            if (error > deviation) {
+                                deviation = error
+                                worstLabel = "${funcs.name}/${system.name}/$gridName/${member.label} при t=$t"
+                            }
+                        }
                     }
                 }
             }
-            worst
         }
         assertTrue(
             deviation < PROJECTION_TOLERANCE,
             "Все семейства функционалов должны быть точны на span{1, rho, sigma}, " +
-                "наибольшее отклонение = $deviation",
+                "наибольшее отклонение = $deviation ($worstLabel)",
         )
     }
+
+    /**
+     * Элемент порождающего пространства вместе с двумя производными и именем для
+     * сообщения об ошибке. Производные хранятся рядом с самой функцией, потому что
+     * семейство xi требует их ОДНОВРЕМЕННО с значением, и рассогласование между ними
+     * дало бы не ошибку компиляции, а тихо неверную проверку.
+     */
+    private data class SpanMember(
+        val label: String,
+        val g: (Double) -> Double,
+        val gD: (Double) -> Double,
+        val gDD: (Double) -> Double,
+    )
 
     /**
      * Проверка замкнутой формулы проекционных функционалов: на равномерной сетке с
