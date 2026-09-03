@@ -25,8 +25,9 @@ import kotlin.test.assertTrue
  * здесь в одном месте: ранее тот же набор был продублирован в решателях Фредгольма
  * и Вольтерры почти дословно.
  *
- * Каждая проверка выполняется на двух сетках — равномерной и квазиравномерной, —
- * чтобы отловить ошибки, проявляющиеся только при неравных шагах.
+ * Каждая проверка выполняется на четырёх сетках — равномерной, квазиравномерной,
+ * градуированной и геометрической, — чтобы отловить ошибки, проявляющиеся только при
+ * неравных шагах.
  */
 @Tag("fast")
 class SplineCoreHealthCheckTest {
@@ -41,6 +42,13 @@ class SplineCoreHealthCheckTest {
         /** Порог для величин, накапливающих ошибку проектирования и вычисления сплайна. */
         const val PROJECTION_TOLERANCE = 1e-8
 
+        /**
+         * Нижняя граница дефекта замкнутой формулы на неравномерной сетке: величина
+         * заведомо ниже фактического дефекта (порядка 0.2), поэтому проверка
+         * [closedFormIsUniformGridOnly] не зависит от точного значения.
+         */
+        const val CLOSED_FORM_GRADED_DEFECT_FLOOR = 1e-2
+
         /** Число точек выборки внутри отрезка при поточечных сравнениях. */
         const val SAMPLE_COUNT = 200
     }
@@ -48,12 +56,28 @@ class SplineCoreHealthCheckTest {
     private val quad = GaussLegendre(8)
     private val uniformGrid = Grid.uniform(8)
     private val quasiUniformGrid = Grid.quasiUniform(8)
+    private val gradedGrid = Grid.graded(8)
+    private val geometricGrid = Grid.geometric(8)
     private val sampleFractions = (0..SAMPLE_COUNT).map { it.toDouble() / SAMPLE_COUNT }
     private val allSystems = listOf(GeneratingSystem.B, GeneratingSystem.H, GeneratingSystem.T)
 
-    /** Возвращает наибольшее отклонение по обеим тестовым сеткам. */
+    /**
+     * Тестовые сетки вместе с именами для сообщений об ошибке.
+     *
+     * Сетки `graded` и `geometric` существенно неравномерны: у `graded` отношение
+     * соседних шагов фиксировано при любом n, и именно она используется при расчёте
+     * неравномерных таблиц (`verification.Sec4VerificationTool`).
+     */
+    private val namedGrids: List<Pair<String, Grid>> = listOf(
+        "uniform" to uniformGrid,
+        "quasiUniform" to quasiUniformGrid,
+        "graded" to gradedGrid,
+        "geometric" to geometricGrid,
+    )
+
+    /** Возвращает наибольшее отклонение по всем тестовым сеткам. */
     private fun worstOverGrids(action: (Grid) -> Double): Double =
-        maxOf(action(uniformGrid), action(quasiUniformGrid))
+        namedGrids.maxOf { (_, grid) -> action(grid) }
 
     /** Точки выборки, равномерно покрывающие отрезок сетки. */
     private fun samplePoints(grid: Grid): List<Double> =
@@ -270,7 +294,7 @@ class SplineCoreHealthCheckTest {
         val random = kotlin.random.Random(seed = 20240117)
         var deviation = 0.0
         var worstLabel = ""
-        for ((gridName, grid) in listOf("uniform" to uniformGrid, "quasiUniform" to quasiUniformGrid)) {
+        for ((gridName, grid) in namedGrids) {
             for (system in allSystems) {
                 val basis = MinimalSplineBasis(system, grid)
                 val families: List<FunctionalFamily> = listOf(
@@ -351,6 +375,51 @@ class SplineCoreHealthCheckTest {
             deviation < EXACT_IDENTITY_TOLERANCE,
             "Коэффициенты замкнутой формулы theta должны совпадать с опубликованными " +
                 "{1/14, -2/7, 10/7, -2/7, 1/14}, наибольшее отклонение = $deviation",
+        )
+    }
+
+    /**
+     * Замкнутая формула пригодна ТОЛЬКО для равномерной сетки.
+     *
+     * Симметричный набор весов `{E^2, -DE, CD-BE, -DE, E^2}/K1` даёт биортогональность
+     * лишь при `A = E` и `B = D` — это симметрия координатного сплайна относительно
+     * центра его носителя, имеющая место на равномерной сетке при чётной/нечётной паре
+     * порождающих. Вне этого случая формула не воспроизводит даже константу, поэтому
+     * она используется только как сверка на равномерной сетке (см.
+     * [closedFormCoefficientsMatchPublishedValues]), а рабочим путём остаётся решение
+     * локальной системы биортогональности.
+     *
+     * Проверяется воспроизведение константы: значение функционала на `f = 1` равно
+     * сумме его весов, поскольку `sum_j omega_j = 1`.
+     */
+    @Test
+    fun closedFormIsUniformGridOnly() {
+        val one = { _: Double -> 1.0 }
+        val zero = { _: Double -> 0.0 }
+        var builtDefect = 0.0
+        for (system in allSystems) {
+            val basis = MinimalSplineBasis(system, gradedGrid)
+            val funcs = ProjFunctionals(basis)
+            var closedDefect = 0.0
+            for (j in 0..gradedGrid.n - 3) {
+                builtDefect = maxOf(builtDefect, abs(funcs.chi(j).apply(one, zero) - 1.0))
+                closedDefect = maxOf(closedDefect, abs(funcs.closedFormInternal(j).apply(one, zero) - 1.0))
+            }
+            // Фактические дефекты при n = 8, ratio = 2: B — 0.2222222222222296,
+            // H — 0.2208866259181210, T — 0.2235658323679606. Точное значение для
+            // полиномиальной порождающей равно 2/9 и не убывает при измельчении.
+            assertTrue(
+                closedDefect > CLOSED_FORM_GRADED_DEFECT_FLOOR,
+                "Замкнутая формула не биортогональна на неравномерной сетке, поэтому дефект " +
+                    "воспроизведения константы обязан быть большим; система ${system.name}, " +
+                    "дефект = $closedDefect",
+            )
+        }
+        // Фактический дефект основного пути при n = 8, ratio = 2: 1.7e-13.
+        assertTrue(
+            builtDefect < LINEAR_SOLVE_TOLERANCE,
+            "Основной путь построения theta должен воспроизводить константу на любой сетке, " +
+                "наибольшее отклонение = $builtDefect",
         )
     }
 
